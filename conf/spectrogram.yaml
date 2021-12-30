@@ -1,0 +1,3 @@
+fft_size: 512
+hop_length: 320
+win_length: 512
