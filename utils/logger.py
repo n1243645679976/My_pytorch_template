@@ -6,15 +6,14 @@ import numpy as np
 from collections import defaultdict
 class Logger():
     def __init__(self, exp, args, conf, log_name='train'):
+        print(f'set {log_name} logger')
         self._accum_loss = 0
         self.exp = exp
-        self.time = time.localtime(time.time())
-        self.time = time.strftime("%Y-%m-%d_%H%M%S", self.time)
         self.log_name = log_name
-        os.makedirs(os.path.join(self.exp, self.time), exist_ok=True)
-        with open(os.path.join(self.exp, self.time, 'config.yaml'), 'w+') as outfile:
+        os.makedirs(self.exp, exist_ok=True)
+        with open(os.path.join(self.exp, 'config.yaml'), 'w+') as outfile:
             yaml.dump(conf, outfile, default_flow_style=False)
-        with open(os.path.join(self.exp, self.time, 'args'), 'w+') as outfile:
+        with open(os.path.join(self.exp, 'args'), 'w+') as outfile:
             outfile.write(' '.join(sys.argv))
         self.is_first_line_written = False
         self.record = defaultdict(list)
@@ -22,12 +21,12 @@ class Logger():
 
     def log_and_clear_record(self, iter):
         if not self.is_first_line_written:
-            with open(os.path.join(self.exp, self.time, self.log_name), 'w+') as outfile:
+            with open(os.path.join(self.exp, self.log_name + '.log'), 'w+') as outfile:
                 outfile.write('iter\t')
                 outfile.write('\t'.join(sorted(self.record.keys())))
                 outfile.write('\n')
             self.is_first_line_written = True
-        with open(os.path.join(self.exp, self.time, self.log_name), 'a+') as outfile:
+        with open(os.path.join(self.exp, self.log_name + '.log'), 'a+') as outfile:
             outfile.write(f'{iter}')
             print(f'{self.log_name}: {iter}', end='')
             for key in sorted(self.record.keys()):
@@ -46,9 +45,9 @@ class Logger():
             self.record_size[key].append(size)
 
 if __name__ == '__main__':
-    from utils.parse_config import get_config
+    from utils.parse_config import get_train_config
     import torch
-    args, conf = get_config()
+    args, conf = get_train_config()
     loss1 = {'overall_loss': torch.tensor([2.3]), 'l1_loss': torch.tensor([1.2]), 'l2_loss': torch.tensor([1.1])}
     loss2 = {'overall_loss': torch.tensor([2.4]), 'l1_loss': torch.tensor([1.5]), 'l2_loss': torch.tensor([0.9])}
     bs1 = torch.randn(64, 1).shape[0]

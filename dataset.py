@@ -5,7 +5,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, exp, data, conf, device='cpu', inferring=False):
+    def __init__(self, feature_dir, exp, data, conf, device='cpu', inferring=False):
         """
         conf['feature']: [feature_1, feature_2, ..., feature_n] (e.g. ['spectrogram', 'hubert', 'score.txt'])
         conf['label']:   [feature_1, feature_2] (e.g. ['score.txt'])
@@ -17,13 +17,14 @@ class Dataset(torch.utils.data.Dataset):
 
         we open data/{data}/wav.scp as filelist, and read feature from exp/{data}/{feat}/*.pt
         """
+        print(f'read dataset {data}')
+        self.feature_dir = feature_dir
         self.exp = exp
         self.dir = data
         self.data = {}
         self.feat_list = conf['feature']
         self.label_list = conf['label']
         self.collate_fn = conf['collate_fn']
-        self.exclude_inference = conf['exclude_inference']
         self.batch_size = conf['batch_size']
         self.inferring = inferring
         self.file_list = []
@@ -33,6 +34,7 @@ class Dataset(torch.utils.data.Dataset):
                  self.file_list.append(line.split()[0])
 
         for feat in conf['feature']:
+            ## txt
             if feat.endswith('.txt'):
                 with open(os.path.join('data', data, feat)) as f:
                     self.data[feat] = {}
@@ -40,6 +42,7 @@ class Dataset(torch.utils.data.Dataset):
                         key, value = line.split()
                         self.data[feat][key] = torch.tensor(float(value)).reshape(1)
 
+            ## emb
             elif feat.endswith('.emb'):
                 id = 0
                 if os.path.isfile(os.path.join('data', data, feat + 'id')):
@@ -58,17 +61,19 @@ class Dataset(torch.utils.data.Dataset):
                 with open(os.path.join('data', data, feat + 'id'), 'w+') as w:
                     for key, value in self.data[feat].items():
                         w.write(f'{key} {value}\n')
-                
+            
+            ## list
             elif feat.endswith('.list'):
-                with open(os.path.join('exp', data, feat)) as w:
+                with open(os.path.join('data', data, feat)) as f:
                     self.data[feat] = {}
                     for line in f.read().splitlines():
                         key = line.split()[0]
                         value = line.split()[1:]
-                        self.data[feat][key] = list(map(lambda x: torch.tensor(float(x)).reshape(1), value))
+                        self.data[feat][key] = list(map(lambda x: torch.tensor(float(x)).reshape(1, -1), value))
+
+            ## others
             else:
                 self.data[feat] = defaultdict(lambda : None)
-        print(self.data)
     def __len__(self):
         return len(self.file_list)
 
@@ -78,11 +83,11 @@ class Dataset(torch.utils.data.Dataset):
         key = self.file_list[index]
         for feat in self.feat_list:
             if self.inferring:
-                if feat in self.exclude_inference:
+                if feat in self.label_list:
                     continue
             data = self.data[feat][key]
             if data == None:
-                self.data[feat][key] = torch.load(os.path.join(self.exp, self.dir, feat, f'{key}.pt')).float()
+                self.data[feat][key] = torch.load(os.path.join(self.feature_dir, self.dir, feat, f'{key}.pt')).float()
                 data = self.data[feat][key]
             if feat in self.label_list:
                 y.append(data)
@@ -110,7 +115,7 @@ def get_collate_fn(conf, device):
             for _x, _y, _id in batch:
                 x[-1].append(_x[i].to(device))
                 y[-1].append(_y[i].to(device))
-                id.append(id)
+                id.append(_id)
             if conf == 'pad_to_max':
                 x[-1] = pad_sequence(x[-1], batch_first=True)
                 y[-1] = pad_sequence(y[-1], batch_first=True)
@@ -118,8 +123,8 @@ def get_collate_fn(conf, device):
     return collate_fn
         
 if __name__ == '__main__':
-    from utils.parse_config import get_config
-    args, conf = get_config()
-    dataloader = Dataset(args.exp, data=args.train, conf=conf['dataset']).get_dataloader()
+    from utils.parse_config import get_train_config
+    args, conf = get_train_config()
+    dataloader = Dataset(args.feature_dir, args.exp, data=args.train, conf=conf['dataset']).get_dataloader()
     for x, y, id in dataloader:
         print(x, y, id)

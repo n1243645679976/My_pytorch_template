@@ -1,7 +1,9 @@
+import math
 import torch
 from utils.model_related import save_model
 class Trainer():
     def __init__(self, args, conf, iter_dataloader, dev_dataloader, model, optimizer, iter_logger, dev_logger, iter):
+        print('set trainer')
         self.args = args
         self.conf = conf
         self.iter_dataloader = iter_dataloader
@@ -24,7 +26,7 @@ class Trainer():
         while self.iters < self.iterations:
             for x, y, id in self.iter_dataloader:
                 pred, loss = self.iter_forward(x, y)
-                loss['overall_loss'].backward()
+                (loss['overall_loss'] / self.accum_grad).backward()
                 self.handle_accumulate_grad()
                 self.iter_logger.register_one_record(loss, x[0].shape[0])
 
@@ -41,10 +43,22 @@ class Trainer():
             self.dev_logger.register_one_record(loss, x[0].shape[0])
         self.dev_logger.log_and_clear_record(self.iters)
 
+    def test(self):
+        with torch.no_grad():
+            for x, y, id in self.iter_dataloader:
+                pred, loss = self.iter_forward(x, y)
+                self.iter_logger.write(id, y, pred)
+
     def handle_accumulate_grad(self):
         self.accum += 1
         if self.accum_grad == self.accum:
-            self.optimizer.step()
+            grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1)
+            if math.isnan(grad_norm):
+                print("grad norm is nan. Do not update model.")
+            elif math.isinf(grad_norm):
+                print("grad norm in inf. Do not update model.")
+            else:
+                self.optimizer.step()
             self.optimizer.zero_grad()
             self.accum = 0
 
@@ -55,7 +69,10 @@ class Trainer():
         if self.iters % self.eval_per_iterations == 0:
             self.iter_logger.log_and_clear_record(self.iters)
             if self.dev_dataloader:
-                self.dev()
+                with torch.no_grad():
+                    self.model.eval()
+                    self.dev()
+                    self.model.train()
         
         if self.iters >= self.iterations:
             return True

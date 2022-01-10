@@ -1,2 +1,6 @@
 pretrained_model/
 exp/
+data/
+__pycache__/
+features/
+*py[cod]
