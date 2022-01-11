@@ -1,6 +1,16 @@
 import yaml
 import configargparse
 
+def get_feat_config():
+    parser = configargparse.ArgumentParser()
+    parser.add('--conf', help='feature config')
+    parser.add('--outdir', help='output directory')
+    parser.add('--set', help='dataset to extract feature')
+    args = parser.parse_args()
+    with open(args.conf) as f:
+        conf = yaml.safe_load(f)
+    return args, conf
+
 def get_train_config():
     parser = configargparse.ArgumentParser()
     parser.add('--conf', help='training config')

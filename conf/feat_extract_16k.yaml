@@ -1,0 +1,24 @@
+features_single: 
+  features: ['spectrogram', 'hubert']
+  output: ['pt', 'pt'] # pt or (mean, min, max + '.txt')
+
+features_trials: 
+  features: ['pesq', 'stoi']
+  output: ['mean.txt', 'mean.txt'] # min, max, mean, trial
+
+fs: 16000
+adapt_fs: True
+spectrogram:
+  fft_size: 512
+  hop_length: 320
+  win_length: 512
+
+hubert:
+  cp_path: pretrained_model/hubert_large_ll60k.pt
+  device: cuda
+
+stoi:
+  extended: False
+  
+pesq:
+  mode: 'nb'

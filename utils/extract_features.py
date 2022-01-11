@@ -1,59 +1,194 @@
+from collections import defaultdict
 import os
 import sys
 import tqdm
-import yaml
 import torch
 import librosa
 import fairseq
-import argparse
+import soundfile as sf
 import scipy.signal
 
 import numpy as np
+from utils.parse_config import get_feat_config
+from pesq import pesq
+from pystoi import stoi
+"""
+Use wav.scp in data/{set} to extract feature
 
-from utils.kaldi_reader import KaldiReader
+If you need to derive some feature(e.g. pesq, stoi) by 2 wavs, then write trial and trial.scp.
+The first column of trial is the key in wav.scp while the second column of trial is the key in trial.scp.
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--outdir', help='output directory')
-parser.add_argument('--feat', help='feature to extract')
-parser.add_argument('--set', help='dataset to extract feature')
-parser.add_argument('--feat_conf', help='config of feature extraction')
-args = parser.parse_args()
+"""
+
+def read_wavscp(file):
+    wavscp = {}
+    with open(file) as f:
+        for line in f.read().splitlines():
+            key, value = line.split()
+            wavscp[key] = value
+    return wavscp
+
+def get_sound(file, waveforms, conf_fs, adapt_fs):
+    # use filepath as key
+    if file in waveforms:
+        return waveforms[file]
+    
+    x, fs = librosa.load(file)
+    # fs related, check fs and resample
+    if fs != conf_fs:
+        if adapt_fs:
+            if not get_sound.fs_warning:
+                get_sound.fs_warning = True
+                print(f'fs not the same: {fs} v.s. {conf_fs} on {file}, adapting automatically')
+            x = librosa.resample(x, fs, conf_fs)
+        else:
+            raise Exception(f'fs not the same {fs} v.s. {conf_fs} on {file}, setting adapt_fs to True to resample automatically')
+    waveforms[file] = x
+    return x
+get_sound.fs_warning = False
 
 # feat extractor
 class FeatExtractor:
-    def __init__(self, conf_file):
-        self.window = scipy.signal.hamming
-        with open(conf_file) as conf:
-            self.conf = yaml.safe_load(conf)
+    def __init__(self, args, conf):
+        self.conf = conf
+        self.window = scipy.signal.windows.hamming
+        for feature, output in zip(self.conf['features_single']['features'], self.conf['features_single']['output']):
+            if output == 'pt':
+                os.makedirs(os.path.join(args.outdir, args.set, feature), exist_ok=True)
 
-        for key in self.conf.keys():
+        for feature, output in zip(self.conf['features_trials']['features'], self.conf['features_trials']['output']):
+            if output == 'pt':
+                os.makedirs(os.path.join(args.outdir, args.set, feature), exist_ok=True)
+
+        for key in self.conf['features_single']['features']:
             if 'hubert'  == key:
-                self.hubert_model, cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task([self.conf['cp_path']])
+                self.hubert_model, cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task([self.conf['hubert']['cp_path']])
                 self.hubert_model = self.hubert_model[0]
                 self.hubert_model.eval()
-                self.device = torch.device(self.conf['device'])
-                self.hubert_model = self.hubert_model.to(self.device)
+                self.hubert_device = torch.device(self.conf['hubert']['device'])
+                self.hubert_model = self.hubert_model.to(self.hubert_device)
                 
-        
+    def extract(self, x, feature, y=None):
+        if feature == 'spectrogram':
+            feat = self.spectrogram(x)
+        elif feature == 'hubert':
+            feat = self.hubert_feature(x)
+        elif feature == 'stoi':
+            feat = self.stoi(x, y)
+        elif feature == 'pesq':
+            feat = self.pesq(x, y)
+        else:
+            raise NotImplementedError(f'not supported feature {feature}')
+        return feat
+
     def spectrogram(self, x):
         # input waveform: (1xT)
         # return spectrogram: (TxF)
         linear = librosa.stft(y=x, 
-                              n_fft=self.conf['fft_size'],
-                              hop_length=self.conf['hop_length'],
-                              win_length=self.conf['win_length'],
+                              n_fft=self.conf['spectrogram']['fft_size'],
+                              hop_length=self.conf['spectrogram']['hop_length'],
+                              win_length=self.conf['spectrogram']['win_length'],
                               window=self.window)
         linear = linear.T
         linear = np.abs(linear)
-        return linear.astype(np.float)
+        return linear.astype(np.float32)
         
     def hubert_feature(self, x):
         x = x.reshape(1, -1)
-        F = torch.from_numpy(x).to(self.device).float()
+        F = torch.from_numpy(x).to(self.hubert_device).float()
         feature = self.hubert_model(F, features_only=True, mask=False)['x']
-        causal = feature.detach().to('cpu').numpy().astype(np.float)
+        causal = feature.detach().to('cpu').numpy().astype(np.float32)
         return causal
 
+    def pesq(self, x, y):
+        pesq_score = pesq(self.conf['fs'], x, y, mode=self.conf['pesq']['mode'])
+        return pesq_score
+
+    def stoi(self, x, y):
+        if abs(x.shape[0] - y.shape[0]) / self.conf['fs'] > 0.15:
+            print('more than 0.15 second length difference between trial inputs')
+        if x.shape[0] > y.shape[0]:
+            x_start = (x.shape[0] - y.shape[0]) // 2
+            x_end = x_start + y.shape[0]
+            x = x[x_start:x_end]
+        if y.shape[0] > x.shape[0]:
+            y_start = (y.shape[0] - x.shape[0]) // 2
+            y_end = y_start + x.shape[0]
+            y = y[y_start:y_end]
+
+        stoi_score = stoi(x, y, self.conf['fs'])
+        return stoi_score
+
+# main
+if __name__ == "__main__":
+    args, conf = get_feat_config()
+    print(f'start extracting features in {args.conf}')
+
+    feat_extractor = FeatExtractor(args, conf)
+    
+    wavscp = read_wavscp(f'data/{args.set}/wav.scp')
+    outputs = defaultdict(lambda :defaultdict(list)) # feature -> key -> feat
+    waveforms = {}
+    print('extracting features from wav.scp')
+    for key, value in tqdm.tqdm(wavscp.items()):
+        x = get_sound(value, waveforms, conf['fs'], conf['adapt_fs'])
+        for feature, output in zip(conf['features_single']['features'], conf['features_single']['output']):
+            outputs[feature]['!@#$ output $#@!'] = output # FIXME: dirty way to save output type
+            feat = feat_extractor.extract(x, feature)
+            if output == 'pt':
+                torch.save(torch.tensor(feat), os.path.join(args.outdir, args.set, feature, key + '.pt'), _use_new_zipfile_serialization=False)
+            elif output.endswith('txt'):
+                outputs[feature][key].append(feat)
+            else:
+                raise Exception(f'not implemented output: {output}')
+    
+    if len(conf['features_trials']) > 0:
+        print('extracting features from trial')
+        trial_outputs = defaultdict(lambda :defaultdict(list))
+        trialscp = read_wavscp(f'data/{args.set}/trial.scp')
+        with open(f'data/{args.set}/trial') as f:
+            for line in tqdm.tqdm(f.read().splitlines()):
+                key1, key2 = line.split()
+                v1 = get_sound(wavscp[key1], waveforms, conf['fs'], conf['adapt_fs'])
+                v2 = get_sound(trialscp[key2], waveforms, conf['fs'], conf['adapt_fs'])
+                for feature, output in zip(conf['features_trials']['features'], conf['features_trials']['output']):
+                    trial_outputs[feature]['!@#$ output $#@!'] = output # FIXME: dirty way to save output type
+                    feat = feat_extractor.extract(x=v1, y=v2, feature=feature)
+                    if output.split('.')[0] == 'trial':
+                        key = key1 + '|' + key2
+                    else:
+                        key = key1
+                    trial_outputs[feature][key].append(feat)
+    
+    for feature in trial_outputs.keys():
+        output = trial_outputs[feature]['!@#$ output $#@!']
+        func_type, output_type = output.split('.')
+        if func_type == 'mean':
+            aggregate_func = lambda x, y: [(x, np.mean(y))]
+        elif func_type == 'min':
+            aggregate_func = lambda x, y: [(x, np.min(y))]
+        elif func_type == 'max':
+            aggregate_func = lambda x, y: [(x, np.max(y))]
+        elif func_type == 'trial':
+            aggregate_func = lambda x, y: [(x, _y) for _y in y]
+        else:
+            raise NotImplementedError(f'not implemented aggregate {aggregate_func}')
+
+        if output_type == 'txt':
+            with open(f'data/{args.set}/{feature}.{output_type}', 'w+') as w:
+                for key in trial_outputs[feature]:
+                    if key == '!@#$ output $#@!':
+                        continue
+                    for key, y in aggregate_func(key, trial_outputs[feature][key]):
+                        w.write(f'{key} {y}\n')
+        else:
+            raise NotImplementedError(f'not implemented output_type: {output_type}')
+
+    with open(os.path.join(args.outdir, args.set, 'command.txt'), 'w+') as w:
+        w.write(' '.join(sys.argv))
+
+
+# In progress
 class onlineFeatureExtractor:
     def __init__(self, conf):
         self.online_window = torch.hamming_window()
@@ -72,30 +207,6 @@ class onlineFeatureExtractor:
 
     def hubert_feature(self, x):
         x = x.reshape(1, -1)
-        F = x.to(self.device).float()
+        F = x.to(self.hubert_device).float()
         feature = self.hubert_model(F, features_only=True, mask=False)['x']
         return feature
-
-# main
-if __name__ == "__main__":
-    expdir = os.path.join(args.outdir, args.set, args.feat)
-    os.makedirs(expdir, exist_ok=True)
-    assert os.path.isfile(f'data/{args.set}/wav.scp'), f'please prepare file list as data/{args.set}/wav.scp'
-    assert os.path.isfile(args.feat_conf), f'{args.feat_conf} doesn\'t exist'
-
-    feat_extractor = FeatExtractor(args.feat_conf)
-    if args.feat == 'spectrogram':
-        feat_ext = feat_extractor.spectrogram
-    elif args.feat == 'hubert':
-        feat_ext = feat_extractor.hubert_feature
-    else:
-        raise NotImplementedError(f'not supported feature {args.feat}')
-
-    for key, value in tqdm.tqdm(KaldiReader(f'scp:data/{args.set}/wav.scp')):
-        wav = value[1] / 32768.
-        feat = feat_ext(wav)
-        torch.save(torch.tensor(feat), os.path.join(expdir, key + '.pt'), _use_new_zipfile_serialization=False)
-
-    with open(os.path.join(expdir, 'command.txt'), 'w+') as f:
-        f.write(' '.join(sys.argv))
-
