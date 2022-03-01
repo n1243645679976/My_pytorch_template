@@ -25,20 +25,22 @@ net:
 
 
 dataset:
-    feature: ['spectrogram', 'score.txt']
+    features: ['spectrogram', 'score.txt']
     label: ['score.txt']
     collate_fn: 'pad_to_max'
     batch_size: 64
+    fs: 16000
+
 
 # multiple_optimizer
 optimizer:
     type: 'Adam'
     conf:
-        lr: 0.01
+        lr: 0.0001
 
 trainer:
     iteration_type: 'epoch'
-    iterations: 500
+    iterations: 30
     save_per_iterations: 10
     eval_per_iterations: 1
     accum_grad: 1
@@ -47,5 +49,5 @@ test_logger: local.metric:MOSNet_metric
 tester:
     metric: sys_no_mse # sys_no_mse, sys, all_no_mse, all
     metric_type: mean_utt
-    dataset: BVCC
+    dataset: VCC18
 

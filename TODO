@@ -1,0 +1,5 @@
+LOGGER? -> 存中間training/dev音檔, attention map
+
+Feature extractor -> else: spectrogram#wav.scp 看能不能延伸成parallelwavgan#a.ptlist轉聲音
+
+SAME KEY in trial file...

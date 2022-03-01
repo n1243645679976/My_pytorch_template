@@ -22,7 +22,7 @@ if __name__ == '__main__':
                       model_conf=conf['net'],
                       resume=load_model['model'],
                       device=args.device)
-    test_dataloader = Dataset(feature_dir=args.features, exp=args.exp, data=args.test, conf=conf['dataset'], device=args.device).get_dataloader()
+    test_dataloader = Dataset(feature_dir=args.features, data=args.test, conf=conf['dataset'], extract_feature_online=args.extract_feature_online, device=args.device).get_dataloader()
     optimizer = get_optimizer(model, conf=conf['optimizer'], load_optimizer=load_model['optimizer'])
     logger_class = dynamic_import(conf['test_logger'])
     iter_logger = logger_class(exp=args.exp, args=args, conf=conf['tester'])

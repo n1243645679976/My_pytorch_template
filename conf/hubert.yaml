@@ -1,2 +1,3 @@
+feature: hubert
 cp_path: pretrained_model/hubert_large_ll60k.pt
 device: cuda

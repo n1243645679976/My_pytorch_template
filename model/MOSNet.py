@@ -41,7 +41,7 @@ class MOSNet(torch.nn.Module):
     def parameters(self):
         return self.update_modules.parameters()
 
-    def forward(self, x, y):
+    def forward(self, batchxs, batchys):
         """ 
         input:
             x[0]: spectrogram (B, T, F)
@@ -49,7 +49,10 @@ class MOSNet(torch.nn.Module):
         output:
             loss
         """
-        x = x[0].unsqueeze(1)
+        x = batchxs[0].data
+        y = batchys[0].data
+
+        x = x.unsqueeze(1)
         for layer in self.conv_encoder:
             x = layer(x)
         x = x.transpose(1, 2)
@@ -63,11 +66,11 @@ class MOSNet(torch.nn.Module):
 
         loss = 0
         if self.frame:
-            _y = y[0].reshape(-1, 1, 1)
+            _y = y.reshape(-1, 1, 1)
             _y = _y.expand(x.shape).clone()
             frame_loss = torch.mean((x-_y) ** 2)
         x = x.mean(dim=1)
-        _y = y[0].reshape(-1, 1)
+        _y = y.reshape(-1, 1)
         _y = _y.expand(x.shape).clone()
         utt_loss = torch.mean((x-_y)**2)
         if self.frame:
@@ -82,8 +85,10 @@ class MOSNet(torch.nn.Module):
                 'utt_loss': utt_loss
             }
         return [x], loss
-    def inference(self, x):
-        x = x[0].unsqueeze(1)
+    def inference(self, batchxs):
+        x = batchxs[0].data
+        
+        x = x.unsqueeze(1)
         for layer in self.conv_encoder:
             x = layer(x)
         x = x.permute(1, 2)

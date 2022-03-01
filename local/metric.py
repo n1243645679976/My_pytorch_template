@@ -47,7 +47,7 @@ class MOSNet_metric():
         self.exp = exp
 
     def write(self, id, y, pred):
-        y = y[0].cpu().detach().numpy()
+        y = y[0].data.cpu().detach().numpy()
         pred = pred[0].cpu().detach().numpy()
         for _id, _y, _pred in zip(id, y, pred):
             sysid = self.get_sysid(_id)

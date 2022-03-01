@@ -5,6 +5,7 @@ def get_feat_config():
     parser = configargparse.ArgumentParser()
     parser.add('--conf', help='feature config')
     parser.add('--outdir', help='output directory')
+    parser.add('--device', help='use cpu or cuda')
     parser.add('--set', help='dataset to extract feature')
     args = parser.parse_args()
     with open(args.conf) as f:
@@ -19,6 +20,7 @@ def get_train_config():
     parser.add('--resume', help='loading file to keep training')
     parser.add('--features', default='exp', help='experiment directory')
     parser.add('--exp', default='exp', help='experiment directory')
+    parser.add('--extract_feature_online', default=False, help='extract features online')
     parser.add('--device', default='cpu', help='use cpu or cuda')
     args = parser.parse_args()
     with open(args.conf) as f:
@@ -33,6 +35,7 @@ def get_test_config():
     parser.add('--exp', default='exp', help='experiment directory')
     parser.add('--device', default='cpu', help='use cpu or cuda')
     parser.add('--start', default='cpu', help='start testing epoch')
+    parser.add('--extract_feature_online', default=False, help='extract features online')
     parser.add('--end', default='cpu', help='end testing epoch')
     args = parser.parse_args()
     with open(args.conf) as f:

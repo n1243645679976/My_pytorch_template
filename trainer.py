@@ -28,7 +28,7 @@ class Trainer():
                 pred, loss = self.iter_forward(x, y)
                 (loss['overall_loss'] / self.accum_grad).backward()
                 self.handle_accumulate_grad()
-                self.iter_logger.register_one_record(loss, x[0].shape[0])
+                self.iter_logger.register_one_record(loss, x[0].data.shape[0])
 
                 if iter_type_iterations:
                     if self.iteration_increase_and_check_break():
@@ -40,7 +40,7 @@ class Trainer():
     def dev(self):
         for x, y, id in self.dev_dataloader:
             pred, loss = self.iter_forward(x, y)
-            self.dev_logger.register_one_record(loss, x[0].shape[0])
+            self.dev_logger.register_one_record(loss, x[0].data.shape[0])
         self.dev_logger.log_and_clear_record(self.iters)
 
     def test(self):
