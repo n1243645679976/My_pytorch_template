@@ -3,20 +3,14 @@ import os
 import sys
 import tqdm
 import torch
-import librosa
-import fairseq
-import soundfile as sf
-import scipy.signal
-import importlib
 import numpy as np
 from utils.parse_config import get_feat_config
 from dataset import Dataset
-from pesq import pesq
-from pystoi import stoi
 
 if __name__ == "__main__":
     args, conf = get_feat_config()
     assert 'label' not in conf['dataset'] or conf['dataset']['label'] == [], 'conf["dataset"]["label"] is not empty. Please remove it to force all features go to batchxs'
+    # feature extraction is done in dataset with extract_feature_online
     dataloader = Dataset(feature_dir=args.outdir, data=args.set, conf=conf['dataset'], extract_feature_online=True, device=args.device).get_dataloader()
     save_formats = [(f, 'unique') if len(f.split('#')) == 1 else f.split('#', maxsplit=1) for f in conf['save_format']]
     values = defaultdict(lambda :defaultdict(list))
@@ -35,6 +29,7 @@ if __name__ == "__main__":
                     print(feature_name, key)
                     values[feature_name][key].append(feature.detach().cpu().numpy())
     
+    # we only support 'pt' and 'txt' save format
     for feature_name, (save_format, aggregation_type) in zip(conf['dataset']['features'], save_formats):
         save_feature_name = feature_name.split('#')[0]
         if save_format == 'pt':
@@ -46,6 +41,7 @@ if __name__ == "__main__":
         elif save_format == 'txt':
             with open(os.path.join('data', args.set, save_feature_name + '.txt'), 'w+') as w:
                 for key in values[feature_name].keys():
+                    # TODO: since the dataloader can only output one value per key, this is redundant if we don't modify dataloader to support multi-output per key.
                     if aggregation_type == 'mean':
                         feature = np.mean(np.array(values[feature_name][key]))
                     elif aggregation_type == 'max':

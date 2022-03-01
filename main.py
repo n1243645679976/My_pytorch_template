@@ -1,4 +1,3 @@
-import time
 import torch
 from dataset import Dataset
 from trainer import Trainer
@@ -6,7 +5,6 @@ from utils.optimizer import get_optimizer
 from utils.parse_config import get_train_config
 from utils.model_related import get_model
 from utils.logger import Logger
-from yaml.events import DocumentEndEvent
 
 
 if __name__ == '__main__':

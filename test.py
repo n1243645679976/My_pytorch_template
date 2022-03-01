@@ -3,7 +3,6 @@ import glob
 import torch
 from dataset import Dataset
 from trainer import Trainer
-from utils.logger import Logger
 from utils.optimizer import get_optimizer
 from utils.parse_config import get_test_config
 from utils.model_related import get_model
@@ -36,6 +35,7 @@ if __name__ == '__main__':
                       iter_logger=iter_logger,
                       dev_logger=None,
                       iter=load_model['iters'])
+
     for checkpoint in sorted(glob.glob(os.path.join(args.exp, 'result', 'snapshot.*')), key=lambda x: int(x.split('.')[-1])):
         it = int(checkpoint.split('.')[-1])
         load_model = torch.load(checkpoint)

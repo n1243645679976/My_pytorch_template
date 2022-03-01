@@ -1,4 +1,4 @@
-model: model.MOSNet:MOSNet
+model: model.MOSNet.MOSNet:MOSNet
 net:
     # multiple_optimizer
     conv_encoder:
@@ -45,7 +45,7 @@ trainer:
     eval_per_iterations: 1
     accum_grad: 1
 
-test_logger: local.metric:MOSNet_metric
+test_logger: model.MOSNet.metric:MOSNet_metric
 tester:
     metric: sys_no_mse # sys_no_mse, sys, all_no_mse, all
     metric_type: mean_utt

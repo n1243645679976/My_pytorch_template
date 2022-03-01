@@ -100,9 +100,12 @@ class Dataset(torch.utils.data.Dataset):
                         feat_conf = yaml.safe_load(f)
                         feat_conf['fs'] = conf['fs']
                     self.extractors[feat] = importlib.import_module(f'utils.features.{feat_conf["feature"]}').extractor(feat_conf)
+
+                    # Not given file to extract, then use default: 'wav.scp' or 'trial', 'wav.scp', 'wav1.scp', 'wav2.scp', ...
                     self.filelist = feat.split('#')[1:]
                     if self.filelist == []:
                         self.filelist = self.extractors[feat].get_default_input_filenames()
+
                     if len(self.filelist) == 1:
                         with open(os.path.join('data', data, self.filelist[0])) as f:
                             for line in f.read().splitlines():
@@ -121,12 +124,6 @@ class Dataset(torch.utils.data.Dataset):
                                 key, value = line.split(' ', maxsplit=1)
                                 self.trial_keys[feat][key] = value.split()
 
-                    # for filelist in self.filelist:
-                    #     with open(os.path.join('data', data, filelist)) as f:
-                    #         for line in f.read().splitlines():
-                    #             key, value = line.split()
-                    #             self.wavdict[value] = None
-                    #             self.feat_key_wav_dict[feat][key] = value
                 self.data[feat] = defaultdict(lambda : None)
                 
     def __len__(self):
@@ -148,8 +145,14 @@ class Dataset(torch.utils.data.Dataset):
                     for i, _key in enumerate(keys):
                         wavfile = self.feat_key_wav_dict[feat][_key][i]
                         if len(self.wavdict[wavfile]) == 0:
-                            wav, sr = librosa.load(wavfile, sr=self.conf['fs'])
-                            self.wavdict[wavfile] = wav
+                            # we load wavfile with librosa.load, which can resmaple the wavform in the same time.
+                            if wavfile.endswith('.wav') or wavfile.endswith('.flac'):
+                                wav, sr = librosa.load(wavfile, sr=self.conf['fs'])
+                                self.wavdict[wavfile] = wav
+                            elif wavfile.endswith('.pt'):
+                                wav = torch.load(wavfile)
+                            # you can add ".endswtih('.png')" or other here to read it by some file reading method
+                            elif wavfile.endswith('')
                         wavs.append(self.wavdict[wavfile])
                     self.data[feat][key] = self.extractors[feat](*wavs)
                 else:

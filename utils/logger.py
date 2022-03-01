@@ -30,10 +30,8 @@ class Logger():
             outfile.write(f'{iter}')
             print(f'{self.log_name}: {iter}', end='')
             for key in sorted(self.record.keys()):
-                outfile.write('\t')
-                outfile.write(f'{np.sum(self.record[key]) / np.sum(self.record_size[key]):.4f}')
-                print('\t', end='')
-                print(f'{np.sum(self.record[key]) / np.sum(self.record_size[key]):.4f}', end='')
+                outfile.write(f'\t{np.sum(self.record[key]) / np.sum(self.record_size[key]):.4f}')
+                print(f'\t{np.sum(self.record[key]) / np.sum(self.record_size[key]):.4f}', end='')
             outfile.write('\n')
             print('')
         self.record = defaultdict(list)
