@@ -1,6 +1,7 @@
 import math
 import torch
 from utils.model_related import save_model
+from utils.dynamic_import import dynamic_import
 class Trainer():
     def __init__(self, args, conf, iter_dataloader, dev_dataloader, model, optimizer, iter_logger, dev_logger, iter):
         print('set trainer')
@@ -20,15 +21,45 @@ class Trainer():
         self.save_per_iterations = conf['save_per_iterations']
         self.eval_per_iterations = conf['eval_per_iterations']
         self.exp = args.exp
+        self.criterion = {}
+        self.criterion_inputs = {}
+        self.criterion_weight = {}
+        for criterion_name in conf['loss'].keys():
+            criterion_conf = conf['loss'][criterion_name]
+            criterion_class = dynamic_import(criterion_conf['criterion_class'])
+            criterion_class_conf = criterion_conf.get('conf', {})
+            self.criterion[criterion_name] = criterion_class(criterion_class_conf)
+            self.criterion_inputs[criterion_name] = criterion_conf.get('inputs')
+            self.criterion_weight[criterion_name] = float(criterion_conf.get('weight', 1))
         
+        # normalize weight
+        for key in self.criterion_weight:
+            self.criterion_weight[key] /= sum(self.criterion_weight.values())
+    
+    def get_loss(self, packed_output):
+        loss = {}
+        overall_loss = 0
+        for criterion_name in self.criterion.keys():
+            inputs = []
+            for input in self.criterion_inputs[criterion_name]:
+                inputs.append(packed_output[input].data)
+
+            loss[criterion_name] = self.criterion[criterion_name](*inputs)
+            overall_loss += self.criterion_weight[criterion_name] * loss[criterion_name]
+            loss['overall_loss'] = overall_loss
+        return loss, overall_loss / self.accum_grad
+
     def train(self):
         iter_type_iterations = (self.iteration_type == 'iterations')
         while self.iters < self.iterations:
-            for x, y, id in self.iter_dataloader:
-                pred, loss = self.iter_forward(x, y)
-                (loss['overall_loss'] / self.accum_grad).backward()
+            for packed_data in self.iter_dataloader:
+                packed_output = self.iter_forward(packed_data)
+
+                loss, overall_loss = self.get_loss(packed_output)
+                overall_loss.backward()
+
                 self.handle_accumulate_grad()
-                self.iter_logger.register_one_record(loss, x[0].data.shape[0])
+                self.iter_logger.register_one_record(packed_data, loss, packed_data['_dataset_feat_x0'].data.shape[0])
 
                 if iter_type_iterations:
                     if self.iteration_increase_and_check_break():
@@ -38,15 +69,17 @@ class Trainer():
                 self.iteration_increase_and_check_break()
 
     def dev(self):
-        for x, y, id in self.dev_dataloader:
-            pred, loss = self.iter_forward(x, y)
-            self.dev_logger.register_one_record(loss, x[0].data.shape[0])
+        for packed_data in self.dev_dataloader:
+            packed_output = self.iter_forward(packed_data)
+            loss, overall_loss = self.get_loss(packed_output)
+
+            self.dev_logger.register_one_record(packed_data, loss, packed_data['_dataset_feat_x0'].data.shape[0])
         self.dev_logger.log_and_clear_record(self.iters)
 
     def test(self):
         with torch.no_grad():
-            for x, y, id in self.iter_dataloader:
-                pred, loss = self.iter_forward(x, y)
+            for packed_data in self.iter_dataloader:
+                packed_output = self.iter_forward(packed_data)
                 self.iter_logger.write(id, y, pred)
 
     def handle_accumulate_grad(self):
@@ -79,12 +112,12 @@ class Trainer():
         return False
 
 
-    def iter_forward(self, x, y):
-        return self.model(x, y)
+    def iter_forward(self, x):
+        return self.model(x)
 
-    def dev_forward(self, x, y):
+    def dev_forward(self, x):
         with torch.no_grad():
-            return self.model(x, y)
+            return self.model(x)
 
     def infer_forward(self, x):
         return self.model.inference(x)

@@ -1,10 +1,10 @@
 model: model.SVSNet.SVSNet:regression_model
 
 dataset:
-    features: ['spectrogram#wav.scp', 'spectrogram#wav1.scp', 'score.txt']
+    features: ['wav#wav.scp', 'wav#wav1.scp', 'score.txt']
     label: ['score.txt']
     collate_fn: 'pad_to_max'
-    batch_size: 64
+    batch_size: 16
     fs: 16000
 
 

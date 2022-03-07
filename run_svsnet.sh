@@ -2,14 +2,14 @@ fs=16000
 stage=0
 stop_stage=100
 
-train=train_mosnet_mean
-dev=dev_mosnet_mean
-test=test_mosnet_mean
+train=train_svsnet_not_mean
+dev=test_svsnet_not_mean
+test=test_svsnet_not_mean
 
 features=features
 feat_conf=conf/feat_extract_v2.yaml
-train_conf=conf/mosnet_v1.yaml
-extract_feature_online="False"
+train_conf=conf/svsnet_v2.yaml
+extract_feature_online="True"
 resume=""
 debug=""
 start_testing=0
@@ -20,10 +20,10 @@ set -u
 set -x
 if [ "$debug" == "True" ]; then
     echo "Use debug mode"
-    train=sub_train
-    dev=sub_dev
-    test=sub_test
-    #train_conf=conf/mosnet_v1_debug.yaml
+    train=train_svsnet_not_mean_debug
+    dev=test_svsnet_not_mean_debug
+    test=test_svsnet_not_mean_debug
+#    train_conf=conf/mosnet_v1_debug.yaml
 fi
 
 if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then

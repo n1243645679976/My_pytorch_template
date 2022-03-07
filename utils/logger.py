@@ -1,9 +1,29 @@
+from email.policy import default
 import os
 import time
 import yaml
 import sys
+import torch
 import numpy as np
 from collections import defaultdict
+from utils.dynamic_import import dynamic_import
+
+"""
+ref: https://stackoverflow.com/questions/44904290/getting-duplicate-keys-in-yaml-using-python
+"""
+from ruamel.yaml import YAML
+from ruamel.yaml.constructor import SafeConstructor
+def construct_yaml_map(self, node):
+    # test if there are duplicate node keys
+    data = []
+    yield data
+    for key_node, value_node in node.value:
+        key = self.construct_object(key_node, deep=True)
+        val = self.construct_object(value_node, deep=True)
+        data.append((key, val))
+SafeConstructor.add_constructor(u'tag:yaml.org,2002:map', construct_yaml_map)
+
+
 class Logger():
     def __init__(self, exp, args, conf, log_name='train'):
         print(f'set {log_name} logger')
@@ -18,18 +38,128 @@ class Logger():
         self.is_first_line_written = False
         self.record = defaultdict(list)
         self.record_size = defaultdict(list)
+        self.log_metrics = conf['log_metrics']
+        if conf['log_metrics']:
+            with open(conf['logger_conf']) as f:
+                metric_conf_str = f.read()
+            _yaml = YAML(typ='safe')
+            self.metric_conf = _yaml.load(metric_conf_str) 
+            self.metric_record = defaultdict(list)
+            self.needed_inputs = set()
+            metric_package = 'model.features.{}:extractor'
+            aggregate_package = 'utils.aggregation:{}'
+            self.inputs = defaultdict(lambda: defaultdict(list))
+            self.inputs_functions = defaultdict(list)
+            self.aggregate_functions = defaultdict(list)
+
+            def dfs(command_conf):
+                if command_conf == 'all.lcc':
+                    raise Exception
+                if isinstance(command_conf[1], list):
+                    # diction, command_conf[*][0] is key, command_conf[*][1] is the value
+                    if isinstance(command_conf[1][0], tuple):
+                        for command in command_conf[1]:
+                            dfs(command)
+                    # list, command_conf[*] is the leaf
+                    else:
+                        for command in command_conf:
+                            self.needed_inputs.add(command)
+                # else, it may be string
+                else:
+                    self.needed_inputs.add(command_conf[1])
+                
+                aggregate_func, metric_func = command_conf[0].split('.')
+                if aggregate_func not in self.aggregate_functions:
+                    self.aggregate_functions[aggregate_func] = dynamic_import(aggregate_package.format(aggregate_func))
+                if metric_func not in self.inputs_functions:
+                    self.inputs_functions[metric_func] = dynamic_import(metric_package.format(metric_func))({})
+
+            for metric_conf in self.metric_conf:
+                dfs(metric_conf[1][0])
+
+                # metric, input_commands = command.split('#', maxsplit=1)
+                # self.metric[command] = dynamic_import(metric_package.format(metric))({})
+                # input_command_list = input_commands.split('#')
+                # for input_command in input_command_list:
+                #     commands = input_command.split('.')
+                #     self.needed_inputs.add(commands[-1])
+                #     self.inputs[command][input_command] = commands[-1]
+                #     commands.pop()
+                #     while commands:
+                #         self.inputs_functions[command][input_command].append(dynamic_import(metric_package.format(commands[-1]))({}))
+                #         self.id_functions[command][input_command].append(dynamic_import(aggregate_package.format(commands[-2])))
+                #         commands.pop()
+                #         commands.pop()
+
+    def iter_metric_dict(self, conf):
+        # assert isinstance(conf, tuple)
+        #print(conf, '\n'*10)
+        all_inputs = []
+        outputs_dict = {}
+        aggregate_func, metric_func = conf[0].split('.')
+        if isinstance(conf[1], list):
+            if isinstance(conf[1][0], tuple):
+                # diction, command_conf[*][0] is key, command_conf[*][1] is the value
+                for _conf in conf[1]:
+                    inputs = self.iter_metric_dict(_conf)
+                    all_inputs.append(inputs)
+            else:
+                # list, command_conf[*] is the leaf
+                for q in conf[1]:
+                    all_inputs.append(self.metric_record[q])
+        else:
+            all_inputs.append(self.metric_record[conf[1]])
+        
+        # all_inputs: [[(id1, feat1[1]), (id2, feat1[2]), ...], [(id1, feat2[1]), (id2, feat2[2]), ...], ...]
+        input_list = []
+        inputs_dict = defaultdict(lambda :defaultdict(list))
+        for i, _inputs in enumerate(all_inputs):
+            for _id, _input in _inputs:
+                inputs_dict[i][self.aggregate_functions[aggregate_func](_id)].append(_input)
+            input_list.append([])
+        for input_key in inputs_dict[0].keys():
+            for i in inputs_dict.keys():
+                input_list[i] = torch.cat(inputs_dict[i][input_key], dim=0)
+            outputs_dict[input_key] = self.inputs_functions[metric_func](*input_list).reshape(-1)
+        
+        outputs = [(id, value) for id, value in outputs_dict.items()]
+        return outputs
 
     def log_and_clear_record(self, iter):
+        outputs = {}
+        if self.log_metrics:
+            for metric_conf in self.metric_conf:
+                self.record[metric_conf[0]] = self.iter_metric_dict(metric_conf[1][0])[0][1].numpy()
+                self.record_size[metric_conf[0]] = [1]
+            # for command in self.inputs.keys():
+            #     all_inputs = []
+            #     for input_command in self.inputs[command].keys():
+            #         input_key = self.inputs[command][input_command]
+            #         inputs = self.metric_record[input_key]
+            #         for aggregate_func, input_func in zip(self.id_functions[command][input_command], self.inputs_functions[command][input_command]):
+            #             inputs_dic = defaultdict(list)
+            #             for id, input in inputs:
+            #                 inputs_dic[aggregate_func(id)].append(input)
+            #             for key in inputs_dic.keys():
+            #                 inputs_dic[key] = input_func(torch.cat(inputs_dic[key], dim=0)).reshape(-1)
+            #             inputs = [(id, input) for id, input in inputs_dic.items()]
+            #         all_inputs.append(torch.tensor([input for id, input in inputs]))
+            #     #print('all_inputs', all_inputs, command)
+            #     outputs[command] = self.metric[command](*all_inputs)
+            #     print(f'{command} {outputs[command]}')
+            self.metric_record = defaultdict(list)
+
+        record_keys = list(self.record.keys())
         if not self.is_first_line_written:
             with open(os.path.join(self.exp, self.log_name + '.log'), 'w+') as outfile:
                 outfile.write('iter\t')
-                outfile.write('\t'.join(sorted(self.record.keys())))
+                outfile.write('\t'.join(record_keys))
                 outfile.write('\n')
             self.is_first_line_written = True
         with open(os.path.join(self.exp, self.log_name + '.log'), 'a+') as outfile:
             outfile.write(f'{iter}')
             print(f'{self.log_name}: {iter}', end='')
-            for key in sorted(self.record.keys()):
+            for key in record_keys:
                 outfile.write(f'\t{np.sum(self.record[key]) / np.sum(self.record_size[key]):.4f}')
                 print(f'\t{np.sum(self.record[key]) / np.sum(self.record_size[key]):.4f}', end='')
             outfile.write('\n')
@@ -37,10 +167,16 @@ class Logger():
         self.record = defaultdict(list)
         self.record_size = defaultdict(list)
             
-    def register_one_record(self, loss, size):
+    def register_one_record(self, packed_data, loss, size):
+        if self.log_metrics:
+            for key in self.needed_inputs:
+                self.metric_record[key].extend([(id, each_batch.reshape(-1).detach().cpu()) for id, each_batch in zip(packed_data['_ids'], packed_data[key].data)])
+                
         for key, value in loss.items():
             self.record[key].append(value.detach().cpu().numpy() * size)
             self.record_size[key].append(size)
+    
+
 
 if __name__ == '__main__':
     from utils.parse_config import get_train_config

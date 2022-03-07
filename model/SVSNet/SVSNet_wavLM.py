@@ -73,6 +73,7 @@ class regression_model(torch.nn.Module):
                                  torch.nn.ReLU(), torch.nn.Dropout(0.3),
                                  Linear(128, 1)
                                  )
+        self.lm2emb = torch.nn.Sequential(Linear(768, 256), torch.nn.ReLU(), Linear(256, 256))
         self.to(device)
         self.device=device
 
@@ -94,6 +95,11 @@ class regression_model(torch.nn.Module):
         lenX2 = batchxs[1].len # B*1
         outputs = []
 
+        wavlm_feat1 = batchxs[2].data
+        wavlm_feat2 = batchxs[3].data
+        lenWavLM_feat1 = batchxs[2].len
+        lenWavLM_feat2 = batchxs[3].len
+
         # downsample by sincnet
         frame_numX1 = torch.div(lenX1 - 250, 3, rounding_mode='floor')
         frame_numX2 = torch.div(lenX2 - 250, 3, rounding_mode='floor')
@@ -102,15 +108,18 @@ class regression_model(torch.nn.Module):
             frame_numX1 = torch.div(frame_numX1, d.kernel_size, rounding_mode='floor')
             frame_numX2 = torch.div(frame_numX2, d.kernel_size, rounding_mode='floor')
 
+        frame_numX1 += lenWavLM_feat1
+        frame_numX2 += lenWavLM_feat2
+
         y1 = self.encode_frame_embedding(x1) # BTF
         y2 = self.encode_frame_embedding(x2) # BTF
+        wavlm_feat1 = self.lm2emb(wavlm_feat1)
+        wavlm_feat2 = self.lm2emb(wavlm_feat2)
 
-        try:
-            cat = coattention(frame_numX1, frame_numX2)
-            cat_map = cat(y1, y2)
-        except Exception as e:
-            print(cat.mask.shape, y1.shape, y2.shape, frame_numX1, frame_numX2)
-            raise e
+        y1 = torch.cat([y1, wavlm_feat1], dim=1)
+        y2 = torch.cat([y2, wavlm_feat2], dim=1)
+        cat = coattention(frame_numX1, frame_numX2)
+        cat_map = cat(y1, y2)
 
         atty1 = torch.softmax(cat_map, dim=2).bmm(y2)
         atty2 = torch.softmax(cat_map, dim=1).transpose(1, 2).bmm(y1)

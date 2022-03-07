@@ -15,8 +15,10 @@ class coattention(torch.nn.Module):
         for i, (l1, l2) in enumerate(zip(xlen1, xlen2)):
             self.mask[i,:l1,:l2] = 1
     def forward(self, x1, x2):
+        self.mask = self.mask.to(x1.device)
         x2 = x2.transpose(1,2)
         CoAtt = torch.bmm(x1, x2)
+        
         CoAtt = CoAtt * self.mask - (1-self.mask) * inf
         return CoAtt
 

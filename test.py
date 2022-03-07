@@ -18,7 +18,7 @@ if __name__ == '__main__':
                   'optimizer': None}
 
     model = get_model(model=conf['model'],
-                      model_conf=conf['net'],
+                      model_conf=conf.get('net', {}),
                       resume=load_model['model'],
                       device=args.device)
     test_dataloader = Dataset(feature_dir=args.features, data=args.test, conf=conf['dataset'], extract_feature_online=args.extract_feature_online, device=args.device).get_dataloader()

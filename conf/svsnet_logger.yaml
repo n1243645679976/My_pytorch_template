@@ -1,0 +1,42 @@
+utt_lcc:
+    all.lcc:
+        utt.mean:
+            utt_score
+        utt.mean:
+            _dataset_feat_y0
+utt_srcc:
+    all.srcc:
+        utt.mean:
+            utt_score
+        utt.mean:
+            _dataset_feat_y0
+utt_mse:
+    all.mse:
+        utt.mean:
+            utt_score
+        utt.mean:
+            _dataset_feat_y0
+sys_lcc:
+    all.lcc:
+        svs18.mean:
+            utt.mean:
+                _dataset_feat_y0
+        svs18.mean:
+            utt.mean:
+                utt_score
+sys_srcc:
+    all.srcc:
+        svs18.mean:
+            utt.mean:
+                _dataset_feat_y0
+        svs18.mean:
+            utt.mean:
+                utt_score
+sys_mse:
+    all.mse:
+        svs18.mean:
+            utt.mean:
+                _dataset_feat_y0
+        svs18.mean:
+            utt.mean:
+                utt_score

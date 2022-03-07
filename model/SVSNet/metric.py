@@ -6,7 +6,8 @@ import torch
 
 def get_sysid_func(dataset):
     def get_sysid(uttid):
-        utt1, utt2 = uttid.split('|')
+        uttid = uttid.split('#')[0]
+        utt1, utt2 = uttid.split('&')
         if dataset == 'VCC18':
             sys1 = utt1.split('_')[0] + utt1.split('_')[-1]
             sys2 = utt2.split('_')[0] + utt2.split('_')[-1]

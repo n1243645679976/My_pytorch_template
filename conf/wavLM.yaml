@@ -1,0 +1,3 @@
+feature: wavLM
+path: ./pretrained_models/WavLM-Base.pt
+device: cuda

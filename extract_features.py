@@ -15,18 +15,20 @@ if __name__ == "__main__":
     save_formats = [(f, 'unique') if len(f.split('#')) == 1 else f.split('#', maxsplit=1) for f in conf['save_format']]
     values = defaultdict(lambda :defaultdict(list))
 
-    for batchxs, _, keys in tqdm.tqdm(dataloader):
+    for packed_data_dict in tqdm.tqdm(dataloader):
         # iterate keys, we want to save all features with its corresponding keys
-        for features, feature_name, (save_format, aggregation_type) in zip(batchxs, conf['dataset']['features'], save_formats):
+
+        for i, (feature_name, (save_format, aggregation_type)) in enumerate(zip(conf['dataset']['features'], save_formats)):
             # maybe we don't extract only one feature a time.
             # iterate feature and its corresponding feature_name and save_format
+            features = packed_data_dict[f'_dataset_feat_x{i}']
+            keys = packed_data_dict[f'_ids']
             for feature, key in zip(features.data, keys):
                 if aggregation_type == 'unique':
                     assert key not in values[feature_name], "key doesn't exist uniquely"
                 if save_format == 'pt':
                     values[feature_name][key].append(feature.unsqueeze(0))
                 else:
-                    print(feature_name, key)
                     values[feature_name][key].append(feature.detach().cpu().numpy())
     
     # we only support 'pt' and 'txt' save format
@@ -50,7 +52,6 @@ if __name__ == "__main__":
                         feature = np.min(np.array(values[feature_name][key]))
                     elif aggregation_type == 'all':
                         feature = ' '.join(map(lambda x: ' '.join(map(str, x.flatten())), values[feature_name][key]))
-                        print(values[feature_name][key])
                     else:
                         raise NotImplementedError(f'Not implemented {aggregation_type=}')
                     w.write(f'{key} {feature}\n')
@@ -59,4 +60,3 @@ if __name__ == "__main__":
                 
     with open(os.path.join(args.outdir, args.set, 'command.txt'), 'w+') as w:
         w.write(' '.join(sys.argv))
-

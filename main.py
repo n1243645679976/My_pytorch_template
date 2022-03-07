@@ -15,18 +15,17 @@ if __name__ == '__main__':
                   'model': None,
                   'optimizer': None}
     if args.resume:
-        print(f'read model from {args.resume}')
+        print(f'load model from {args.resume}')
         load_model = torch.load(args.resume)
 
-    model = get_model(model=conf['model'],
-                      model_conf=conf['net'],
+    model = get_model(conf=conf,
                       resume=load_model['model'],
                       device=args.device)
     train_dataloader = Dataset(feature_dir=args.features, data=args.train, conf=conf['dataset'], extract_feature_online=args.extract_feature_online, device=args.device).get_dataloader()
     dev_dataloader = Dataset(feature_dir=args.features, data=args.dev, conf=conf['dataset'], extract_feature_online=args.extract_feature_online, device=args.device).get_dataloader()
     optimizer = get_optimizer(model, conf=conf['optimizer'], load_optimizer=load_model['optimizer'])
-    iter_logger = Logger(exp=args.exp, args=args, conf=conf, log_name='train')
-    dev_logger = Logger(exp=args.exp, args=args, conf=conf, log_name='dev')
+    iter_logger = Logger(exp=args.exp, args=args, conf=conf['logger'], log_name='train')
+    dev_logger = Logger(exp=args.exp, args=args, conf=conf['logger'], log_name='dev')
 
     trainer = Trainer(args=args,
                       conf=conf['trainer'],

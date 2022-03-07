@@ -7,6 +7,13 @@ from collections import defaultdict
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 
+class packed_batch():
+    def __init__(self, data, data_len=None):
+        self.data = data
+        self.len = data_len
+    def __repr__(self):
+        return f'data shape: {self.data.shape}, length of data: {self.len}'
+
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, feature_dir, data, conf, extract_feature_online=False, device='cpu', inferring=False):
         """
@@ -99,7 +106,7 @@ class Dataset(torch.utils.data.Dataset):
                     with open(f'conf/{feat_conf_file}.yaml') as f:
                         feat_conf = yaml.safe_load(f)
                         feat_conf['fs'] = conf['fs']
-                    self.extractors[feat] = importlib.import_module(f'utils.features.{feat_conf["feature"]}').extractor(feat_conf)
+                    self.extractors[feat] = importlib.import_module(f'model.features.{feat_conf["feature"]}').extractor(feat_conf)
 
                     # Not given file to extract, then use default: 'wav.scp' or 'trial', 'wav.scp', 'wav1.scp', 'wav2.scp', ...
                     self.filelist = feat.split('#')[1:]
@@ -151,8 +158,7 @@ class Dataset(torch.utils.data.Dataset):
                                 self.wavdict[wavfile] = wav
                             elif wavfile.endswith('.pt'):
                                 wav = torch.load(wavfile)
-                            # you can add ".endswtih('.png')" or other here to read it by some file reading method
-                            elif wavfile.endswith('')
+                            # you can add some condition lik e".endswtih('.png')" or other here to read it by some file reading method
                         wavs.append(self.wavdict[wavfile])
                     self.data[feat][key] = self.extractors[feat](*wavs)
                 else:
@@ -170,12 +176,6 @@ class Dataset(torch.utils.data.Dataset):
                           collate_fn=get_collate_fn(self.collate_fn, self.device),
                          )
 
-class batched_data():
-    def __init__(self, data, data_len):
-        self.data = data
-        self.len = data_len
-    def __repr__(self):
-        return f'data shape: {self.data.shape}, length of data: {self.len}'
 
 def get_collate_fn(conf, device):
     def collate_fn(batch):
@@ -183,41 +183,36 @@ def get_collate_fn(conf, device):
         batch: [(x1, y1, id1), (x2, y2, id2), ...], which equals to [((feat1_x1, feat2_x1,...), (feat1_y1, feat2_y1,...), 'id1'), ((feat1_x2, feat2_x2,...), (feat1_y2, feat2_y2,...), 'id2'), ...]
         output: [[[feat1_x1, feat1_x2,...], [feat2_x1, feat2_x2,...],...], [[feat1_y1, feat1_y1,...], [feat2_y1, feat2_y2,...],...], ['id1', 'id2',...]]
         """
-        x = []
-        lenx = []
-        y = []
-        leny = []
+        batched_data = {}
+
         ids = []
-        batchxs = []
-        batchys = []
         for i in range(len(batch[0][0])):
-            x.append([])
-            lenx.append([])
+            x, lenx = [], []
             for _x, _y, _id in batch:
-                x[-1].append(_x[i].to(device))
-                lenx[-1].append(x[-1][-1].shape[0])
-            if conf == 'pad_to_max':
-                x[-1] = pad_sequence(x[-1], batch_first=True)
-                lenx[-1] = torch.tensor(lenx[-1])
-                batchxs.append(batched_data(x[-1], lenx[-1]))
+                x.append(_x[i].to(device))
+                lenx.append(_x[i].shape[0])
+            x = pad_sequence(x, batch_first=True)
+            lenx = torch.tensor(lenx)
+            batched_data[f'_dataset_feat_x{i}'] = packed_batch(x, lenx)
+
         for i in range(len(batch[0][1])):
-            y.append([])
-            leny.append([])
+            y, leny = [], []
             for _x, _y, _id in batch:
-                y[-1].append(_y[i].to(device))
-                leny[-1].append(y[-1][-1].shape[0])
-            if conf == 'pad_to_max':
-                y[-1] = pad_sequence(y[-1], batch_first=True)
-                leny[-1] = torch.tensor(leny[-1])
-                batchys.append(batched_data(y[-1], leny[-1]))
+                y.append(_y[i].to(device))
+                leny.append(_y[i].shape[0])
+            y = pad_sequence(y, batch_first=True)
+            leny = torch.tensor(leny)
+            batched_data[f'_dataset_feat_y{i}'] = packed_batch(y, leny)
+
         for _x, _y, _id in batch:
             ids.append(_id)
-        return batchxs, batchys, ids
+        batched_data[f'_ids'] = ids
+        return batched_data
     return collate_fn
 
 if __name__ == '__main__':
     from utils.parse_config import get_train_config
     args, conf = get_train_config()
     dataloader = Dataset(args.features, data=args.train, conf=conf['dataset'], extract_feature_online=True).get_dataloader()
-    for x, y, id in dataloader:
-        print(x, y, id)
+    for x in dataloader:
+        print(x)
