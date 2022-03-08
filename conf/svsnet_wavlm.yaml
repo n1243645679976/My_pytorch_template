@@ -18,7 +18,7 @@ dataset:
     #  loss: _dataset_feat_y0
     label: ['score.txt']
     collate_fn: 'pad_to_max'
-    batch_size: 8
+    batch_size: 3
     fs: 16000
 
 
@@ -33,7 +33,7 @@ trainer:
     iterations: 30
     save_per_iterations: 1
     eval_per_iterations: 1
-    accum_grad: 1
+    accum_grad: 2
     loss:
         utt_loss:
             criterion_class: model.nn.losses:batchedMSELoss

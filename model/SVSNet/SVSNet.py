@@ -57,9 +57,9 @@ class WaveResNet(torch.nn.Module):
         return y
 
 class regression_model(torch.nn.Module):
-    def __init__(self, conf, device='cpu'):
+    def __init__(self, conf):
         super(regression_model, self).__init__()
-        self.sincnet = SincNet(N_cnn_lay=1, device=device)
+        self.sincnet = SincNet(N_cnn_lay=1)
         self.wavenet = torch.nn.ModuleList(
                         [WaveResNet() for i in range(4)])
         self.downsample = torch.nn.ModuleList(
@@ -73,8 +73,6 @@ class regression_model(torch.nn.Module):
                                  torch.nn.ReLU(), torch.nn.Dropout(0.3),
                                  Linear(128, 1)
                                  )
-        self.to(device)
-        self.device=device
 
     def encode_frame_embedding(self, x):
         y = self.sincnet(x)

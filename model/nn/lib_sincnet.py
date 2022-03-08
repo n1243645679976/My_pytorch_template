@@ -364,7 +364,7 @@ class MLP(nn.Module):
 
 class SincNet(nn.Module):
     
-    def __init__(self, N_cnn_lay=12, device='cpu'):
+    def __init__(self, N_cnn_lay=12):
        super(SincNet,self).__init__()
     
        self.cnn_N_filt=[64, 64, 64, 128, 128, 128, 256, 256, 256, 512, 512, 512]
@@ -435,7 +435,6 @@ class SincNet(nn.Module):
        zero_init(self.rnn.bias_ih_l0)
 
        self.out_dim=current_input*N_filt
-       self.to(device)
 
 
     def forward(self, x):
@@ -465,118 +464,5 @@ class SincNet(nn.Module):
 
        return x
    
-class model(torch.nn.Module):
-    def __init__(self, N_cnn_lay=12, device='cpu'):
-        super(model, self).__init__()
-        self.device = device
-        self.encode_model = SincNet(N_cnn_lay=N_cnn_lay, issinc=False, device=device)
-#        self.transform_model = torch.nn.Sequential(
-#                            torch.nn.Linear(2160, 2048), torch.nn.ReLU(),
-#                            torch.nn.Linear(2048, 2048), torch.nn.ReLU(),
-#                            torch.nn.Linear(2048, 2048)
-#                            )
-        self.derive_model = torch.nn.Sequential(
-                            torch.nn.Linear(256, 128), 
-                            torch.nn.ReLU(), 
-         #                   torch.nn.Dropout(0.3), 
-                            torch.nn.Linear(128, 1)
-                            )
-        for i in range(0,3,2):
-            xuni_init(self.derive_model[i].weight)
-            zero_init(self.derive_model[i].bias)
-        self.criterion = torch.nn.MSELoss()
-        self.to(device)
-    def forward(self, x, label):
-        # input: 
-        #   x: [(x11, x12), (x21, x22),..., (xN1, xN2)]
-        #     xab: 1 * 1 * Feature * Time
-        #   label: torch.tensor(N)   0~3
-        # do LSTM and take the last vector of its output
-        # get the SE between x
-        # 
-        # mean the frame embedding and derive it, named DME
-        y1 = torch.cat([self.encode_model(_x).mean(dim=1) for _x in x], dim=0) # B*T1*F
-        y = self.derive_model(y1).reshape(-1)
-        
-        loss = self.criterion(label, y)
-        return loss, y
-
-    def predict(self, x, label):
-        with torch.no_grad():
-            return self.forward(x, label)
-class mde_framemodel(model):
-    def __init__(self, device='cpu'):
-        super(mde_framemodel, self).__init__(device=device)
-    def forward(self, x, label):
-        # mean the frame score, named MDE
-        y1 = [self.derive_model(self.encode_model(_x)).reshape(1, -1) for _x in x]
-        loss = torch.sum((y1[0] - label[0]) ** 2)
-        for i in range(1, len(y1)):
-            loss += torch.sum((y1[i] - label[i]) ** 2)
-        y = torch.cat([_y.mean(dim=1) for _y in y1], dim=0).reshape(-1)
-        loss = self.criterion(label, y)
-        return loss, y
-    def predict(self, x, label):
-        with torch.no_grad():
-            return self.forward(x, label)
-
-class mde_model(model):
-    def __init__(self, device='cpu'):
-        super(mde_model, self).__init__(device=device)
-    def forward(self, x, label):
-        # mean the frame score, named MDE
-        y = torch.cat([self.derive_model(self.encode_model(_x)).reshape(1, -1).mean(dim=-1) for _x in x], dim=0)
-        loss = self.criterion(y, label)
-        return loss, y
-    def predict(self, x, label):
-        with torch.no_grad():
-            return self.forward(x, label)
-class conv12_model(model):
-    def __init__(self, device='cpu'):
-        super(conv12_model, self).__init__(N_cnn_lay=12, device=device)
-        
-class sa_model(model):
-    def __init__(self, device='cpu'):
-        super(sa_model, self).__init__(N_cnn_lay=12, device=device)
-        self.rnn = torch.nn.LSTM(input_size=512, hidden_size=128, bidirectional=True, batch_first=True, num_layers=1)
-        xuni_init(self.rnn.weight_hh_l0)
-        xuni_init(self.rnn.weight_ih_l0)
-        zero_init(self.rnn.bias_hh_l0)
-        zero_init(self.rnn.bias_ih_l0)
-        self.to(device)
-    def forward(self, x, label):
-        y1 = [self.rnn(self.encode_model(_x).reshape(1, 512, -1).transpose(1, 2))[0] for _x in x]#btf
-        att = [_y.bmm(_y.transpose(1,2)) for _y in y1]#btt
-        y = torch.cat([self.derive_model(_att.bmm(_y)).mean(dim=1) for _y, _att in zip(y1, att)], dim=0)#b1 mean on score
-        y = y.reshape(label.shape)
-        return torch.mean((y-label)**2), y
-class sa_dmae_model(sa_model):
-    def __init__(self, device='cpu'):
-        super(sa_dmae_model, self).__init__(device=device)
-    def forward(self, x, label):
-        y1 = [self.rnn(self.encode_model(_x).reshape(1, 512, -1).transpose(1, 2))[0] for _x in x]
-        att = [_y.bmm(_y.transpose(1,2)) for _y in y1]
-        y = torch.cat([self.derive_model(_att.bmm(_y).mean(dim=1)) for _y, _att in zip(y1, att)], dim=0)
-        y = y.reshape(label.shape)
-        return torch.mean((y-label)**2), y
-
-class sa_mdae_framemodel(sa_model):
-    def __init__(self, device='cpu'):
-        super(sa_mdae_framemodel, self).__init__(device=device)
-    def forward(self, x, label):
-        y1 = [self.rnn(self.encode_model(_x).reshape(1, 512, -1).transpose(1, 2))[0] for _x in x]
-        att = [_y.bmm(_y.transpose(1,2)) for _y in y1]
-        y = [self.derive_model(_att.bmm(_y)) for _y, _att in zip(y1, att)]
-        loss = 0
-        label = label.reshape(-1)
-        for i in range(len(y)):
-            loss += torch.mean(y[i] - label[i])
-        loss /= len(y)
-        y = torch.cat([_y.mean(dim=1) for _y in y], dim=0)
-        y = y.reshape(label.shape)
-        return torch.mean((y-label)**2), y
-
-
-
 
 

@@ -57,9 +57,9 @@ class WaveResNet(torch.nn.Module):
         return y
 
 class regression_model(torch.nn.Module):
-    def __init__(self, conf, device='cpu'):
+    def __init__(self, conf):
         super(regression_model, self).__init__()
-        self.sincnet = SincNet(N_cnn_lay=1, device=device)
+        self.sincnet = SincNet(N_cnn_lay=1)
         self.wavenet = torch.nn.ModuleList(
                         [WaveResNet() for i in range(4)])
         self.downsample = torch.nn.ModuleList(
@@ -74,8 +74,6 @@ class regression_model(torch.nn.Module):
                                  Linear(128, 1)
                                  )
         self.lm2emb = torch.nn.Sequential(Linear(768, 256), torch.nn.ReLU(), Linear(256, 256))
-        self.to(device)
-        self.device=device
 
     def encode_frame_embedding(self, x):
         y = self.sincnet(x)
@@ -108,16 +106,30 @@ class regression_model(torch.nn.Module):
             frame_numX1 = torch.div(frame_numX1, d.kernel_size, rounding_mode='floor')
             frame_numX2 = torch.div(frame_numX2, d.kernel_size, rounding_mode='floor')
 
-        frame_numX1 += lenWavLM_feat1
-        frame_numX2 += lenWavLM_feat2
+
 
         y1 = self.encode_frame_embedding(x1) # BTF
         y2 = self.encode_frame_embedding(x2) # BTF
         wavlm_feat1 = self.lm2emb(wavlm_feat1)
         wavlm_feat2 = self.lm2emb(wavlm_feat2)
 
-        y1 = torch.cat([y1, wavlm_feat1], dim=1)
-        y2 = torch.cat([y2, wavlm_feat2], dim=1)
+        newMaxLen1 = torch.max(frame_numX1 + lenWavLM_feat1)
+        newMaxLen2 = torch.max(frame_numX2 + lenWavLM_feat2)
+        newY1 = torch.zeros(y1.shape[0], newMaxLen1, y1.shape[2]).to(y1.device)
+        newY2 = torch.zeros(y2.shape[0], newMaxLen2, y2.shape[2]).to(y1.device)
+
+        for i in range(y1.shape[0]):
+            newY1[i, :frame_numX1[i]] = y1[i, :frame_numX1[i]]
+            newY1[i, frame_numX1[i]:frame_numX1[i]+lenWavLM_feat1[i]] = wavlm_feat1[i, :lenWavLM_feat1[i]]
+            newY2[i, :frame_numX2[i]] = y2[i, :frame_numX2[i]]
+            newY2[i, frame_numX2[i]:frame_numX2[i]+lenWavLM_feat2[i]] = wavlm_feat2[i, :lenWavLM_feat2[i]]
+
+        y1 = newY1
+        y2 = newY2
+
+        frame_numX1 += lenWavLM_feat1
+        frame_numX2 += lenWavLM_feat2
+
         cat = coattention(frame_numX1, frame_numX2)
         cat_map = cat(y1, y2)
 
@@ -132,7 +144,6 @@ class regression_model(torch.nn.Module):
         for i, (l1, l2) in enumerate(zip(frame_numX1, frame_numX2)):
             diffy1[i] /= l1
             diffy2[i] /= l2
-        
         y1 = self.derive_model(diffy1)
         y2 = self.derive_model(diffy2)
         y = (y1 + y2) / 2

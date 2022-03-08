@@ -10,6 +10,7 @@ def get_feat_config():
     args = parser.parse_args()
     with open(args.conf) as f:
         conf = yaml.safe_load(f)
+    conf['device'] = args.device
     return args, conf
 
 def get_train_config():
@@ -25,6 +26,7 @@ def get_train_config():
     args = parser.parse_args()
     with open(args.conf) as f:
         conf = yaml.safe_load(f)
+    conf['device'] = args.device
     return args, conf
 
 def get_test_config():
@@ -40,4 +42,5 @@ def get_test_config():
     args = parser.parse_args()
     with open(args.conf) as f:
         conf = yaml.safe_load(f)
+    conf['device'] = args.device
     return args, conf
