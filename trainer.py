@@ -53,17 +53,22 @@ class Trainer():
         iter_type_iterations = (self.iteration_type == 'iterations')
         while self.iters < self.iterations:
             for packed_data in self.iter_dataloader:
-                packed_output = self.iter_forward(packed_data)
+                try:
+                    packed_output = self.iter_forward(packed_data)
 
-                loss, overall_loss = self.get_loss(packed_output)
-                overall_loss.backward()
+                    loss, overall_loss = self.get_loss(packed_output)
+                    overall_loss.backward()
 
-                self.handle_accumulate_grad()
-                self.iter_logger.register_one_record(packed_data, loss, packed_data['_dataset_feat_x0'].data.shape[0])
+                    self.handle_accumulate_grad()
+                    self.iter_logger.register_one_record(packed_data, loss, packed_data['_dataset_feat_x0'].data.shape[0])
 
-                if iter_type_iterations:
-                    if self.iteration_increase_and_check_break():
-                        break
+                    if iter_type_iterations:
+                        if self.iteration_increase_and_check_break():
+                            break
+                except RuntimeError as e:
+                    print(e, self.iters, packed_data['_ids'])
+                    del packed_data
+                    torch.cuda.empty_cache()
 
             if not iter_type_iterations:
                 self.iteration_increase_and_check_break()

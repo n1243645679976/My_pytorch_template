@@ -106,8 +106,6 @@ class regression_model(torch.nn.Module):
             frame_numX1 = torch.div(frame_numX1, d.kernel_size, rounding_mode='floor')
             frame_numX2 = torch.div(frame_numX2, d.kernel_size, rounding_mode='floor')
 
-
-
         y1 = self.encode_frame_embedding(x1) # BTF
         y2 = self.encode_frame_embedding(x2) # BTF
         wavlm_feat1 = self.lm2emb(wavlm_feat1)
