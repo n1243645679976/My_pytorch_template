@@ -1,0 +1,30 @@
+utt_lcc:
+    all.lcc:
+        - utt_score
+        - _dataset_feat_y0
+utt_srcc:
+    all.srcc:
+        - utt_score
+        - _dataset_feat_y0
+utt_mse:
+    all.mse:
+        - utt_score
+        - _dataset_feat_y0
+sys_lcc:
+    all.lcc:
+        svs20.mean:
+            _dataset_feat_y0
+        svs20.mean:
+            utt_score
+sys_srcc:
+    all.srcc:
+        svs20.mean:
+            _dataset_feat_y0
+        svs20.mean:
+            utt_score
+sys_mse:
+    all.mse:
+        svs20.mean:
+            _dataset_feat_y0
+        svs20.mean:
+            utt_score

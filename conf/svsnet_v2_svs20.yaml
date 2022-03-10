@@ -1,0 +1,53 @@
+model: 
+    modules:
+        modules_1:
+            model_class: model.SVSNet.SVSNet:regression_model
+            arch: 
+                conf: []
+            # inputs: ['_dataset_']
+            output: ['utt_score']
+            freeze: False
+            # input "input and model", return "adapted input and loaded model"
+            # initial_model:
+            # initial_model_adaptor:
+            # input_adaptor: None
+
+
+dataset:
+    #  loss: _dataset_feat_x0, _dataset_feat_x1, ..., when feature in features not in label
+    features: ['wav#wav.scp', 'wav#wav1.scp', 'score.txt']
+    #  loss: _dataset_feat_y0
+    label: ['score.txt']
+    collate_fn: 'pad_to_max'
+    batch_size: 40
+    fs: 16000
+
+
+# multiple_optimizer
+optimizer:
+    type: 'Adam'
+    conf:
+        lr: 0.0001
+
+trainer:
+    iteration_type: 'epoch'
+    iterations: 30
+    save_per_iterations: 1
+    eval_per_iterations: 1
+    accum_grad: 1
+    loss:
+        utt_loss:
+            criterion_class: model.nn.losses:batchedMSELoss
+            # conf:
+            inputs: ['utt_score', '_dataset_feat_y0']
+            weight: 1 
+        #criterion2:
+            #criterion_class: torch.nn:MSELoss
+            #conf: 
+            #inputs: ['utt_score', '_dataset_feat_y0']
+            # default weight: 1
+
+logger:
+    log_metrics: True
+    logger_conf: conf/svsnet_logger_svs20.yaml
+    save: ['utt_score.txt#utt_score']

@@ -9,4 +9,6 @@ class extractor(baseExtractor):
     def extract(self, x, y):
         return lcc(x, y)[0]
     def forward(self, x, y):
+        x = x.reshape(-1)
+        y = y.reshape(-1)
         return torch.tensor(self.extract(x, y))

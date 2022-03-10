@@ -6,7 +6,7 @@ from trainer import Trainer
 from utils.optimizer import get_optimizer
 from utils.parse_config import get_test_config
 from utils.model_related import get_model
-from utils.dynamic_import import dynamic_import
+from utils.logger import Logger
 
 
 if __name__ == '__main__':
@@ -16,15 +16,12 @@ if __name__ == '__main__':
                   'conf': None,
                   'model': None,
                   'optimizer': None}
-
-    model = get_model(model=conf['model'],
-                      model_conf=conf.get('net', {}),
+    model = get_model(conf=conf,
                       resume=load_model['model'],
                       device=args.device)
     test_dataloader = Dataset(feature_dir=args.features, data=args.test, conf=conf['dataset'], extract_feature_online=args.extract_feature_online, device=args.device).get_dataloader()
     optimizer = get_optimizer(model, conf=conf['optimizer'], load_optimizer=load_model['optimizer'])
-    logger_class = dynamic_import(conf['test_logger'])
-    iter_logger = logger_class(exp=args.exp, args=args, conf=conf['tester'])
+    test_logger = Logger(exp=args.exp, args=args, conf=conf['logger'], log_name='test')
 
     trainer = Trainer(args=args,
                       conf=conf['trainer'],
@@ -32,16 +29,21 @@ if __name__ == '__main__':
                       dev_dataloader=None,
                       model=model,
                       optimizer=optimizer,
-                      iter_logger=iter_logger,
+                      iter_logger=test_logger,
                       dev_logger=None,
                       iter=load_model['iters'])
 
     for checkpoint in sorted(glob.glob(os.path.join(args.exp, 'result', 'snapshot.*')), key=lambda x: int(x.split('.')[-1])):
         it = int(checkpoint.split('.')[-1])
-        load_model = torch.load(checkpoint)
-        model.load_state_dict(load_model['model'])
+        trainer.model = model
         if it >= int(args.start) and it <= int(args.end):
+            print(f'load {checkpoint}')
+            load_model = torch.load(checkpoint)
+            model = get_model(conf=conf,
+                              resume=load_model['model'],
+                              device=args.device)
+            model.eval()
+            trainer.model = model
             print(f'iteration: {it}')
-            trainer.test()
-            iter_logger.write_all(it)
-    iter_logger.write_best()
+            trainer.test(it)
+    test_logger.write_best()

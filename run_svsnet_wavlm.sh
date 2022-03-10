@@ -5,6 +5,8 @@ stop_stage=100
 train=train_svsnet_not_mean
 dev=test_svsnet_not_mean
 test=test_svsnet_not_mean
+test_svs20=test_svsnet_vcc20
+train_conf_svs20=conf/svsnet_wavlm_svs20.yaml
 
 features=features
 feat_conf=conf/feat_extract_v2.yaml
@@ -51,11 +53,15 @@ fi
 
 expdir=exp/${train}_`basename ${train_conf%%.*}`
 if [ $stage -le 1 ] && [ $stop_stage -ge 1 ]; then
-    echo "stage 1: training mosnet"
+    echo "stage 1: training svsnet"
     python main.py --train $train --dev $dev  --conf $train_conf --features $features --exp $expdir --device cuda --resume "$resume" --extract_feature_online $extract_feature_online
 fi
 
 if [ $stage -le 2 ] && [ $stop_stage -ge 2 ]; then
-    echo "stage 2: testing mosnet"
+    echo "stage 2: testing svsnet"
     python test.py --test $test --conf $train_conf --exp $expdir --start $start_testing --end $end_testing --features $features --device cuda --extract_feature_online $extract_feature_online
+fi
+if [ $stage -le 3 ] && [ $stop_stage -ge 3 ]; then
+    echo "stage 3: testing svsnet, vcc20"
+    python test.py --test $test_svs20 --conf $train_conf_svs20 --exp $expdir --start $start_testing --end $end_testing --features $features --device cuda --extract_feature_online $extract_feature_online
 fi

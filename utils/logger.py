@@ -38,6 +38,13 @@ class Logger():
         self.is_first_line_written = False
         self.record = defaultdict(list)
         self.record_size = defaultdict(list)
+
+        self.save = conf.get('save', [])
+        if self.save:
+            self.save_dir = os.path.join(self.exp, 'save', self.log_name)
+            os.makedirs(self.save_dir, exist_ok=True)
+            self.save_record = defaultdict(list)
+
         self.log_metrics = conf['log_metrics']
         if conf['log_metrics']:
             with open(conf['logger_conf']) as f:
@@ -62,7 +69,7 @@ class Logger():
                             dfs(command)
                     # list, command_conf[*] is the leaf
                     else:
-                        for command in command_conf:
+                        for command in command_conf[1]:
                             self.needed_inputs.add(command)
                 # else, it may be string
                 else:
@@ -76,20 +83,6 @@ class Logger():
 
             for metric_conf in self.metric_conf:
                 dfs(metric_conf[1][0])
-
-                # metric, input_commands = command.split('#', maxsplit=1)
-                # self.metric[command] = dynamic_import(metric_package.format(metric))({})
-                # input_command_list = input_commands.split('#')
-                # for input_command in input_command_list:
-                #     commands = input_command.split('.')
-                #     self.needed_inputs.add(commands[-1])
-                #     self.inputs[command][input_command] = commands[-1]
-                #     commands.pop()
-                #     while commands:
-                #         self.inputs_functions[command][input_command].append(dynamic_import(metric_package.format(commands[-1]))({}))
-                #         self.id_functions[command][input_command].append(dynamic_import(aggregate_package.format(commands[-2])))
-                #         commands.pop()
-                #         commands.pop()
 
     def iter_metric_dict(self, conf):
         # assert isinstance(conf, tuple)
@@ -126,28 +119,35 @@ class Logger():
         return outputs
 
     def log_and_clear_record(self, iter):
-        outputs = {}
         if self.log_metrics:
             for metric_conf in self.metric_conf:
                 self.record[metric_conf[0]] = self.iter_metric_dict(metric_conf[1][0])[0][1].numpy()
                 self.record_size[metric_conf[0]] = [1]
-            # for command in self.inputs.keys():
-            #     all_inputs = []
-            #     for input_command in self.inputs[command].keys():
-            #         input_key = self.inputs[command][input_command]
-            #         inputs = self.metric_record[input_key]
-            #         for aggregate_func, input_func in zip(self.id_functions[command][input_command], self.inputs_functions[command][input_command]):
-            #             inputs_dic = defaultdict(list)
-            #             for id, input in inputs:
-            #                 inputs_dic[aggregate_func(id)].append(input)
-            #             for key in inputs_dic.keys():
-            #                 inputs_dic[key] = input_func(torch.cat(inputs_dic[key], dim=0)).reshape(-1)
-            #             inputs = [(id, input) for id, input in inputs_dic.items()]
-            #         all_inputs.append(torch.tensor([input for id, input in inputs]))
-            #     #print('all_inputs', all_inputs, command)
-            #     outputs[command] = self.metric[command](*all_inputs)
-            #     print(f'{command} {outputs[command]}')
             self.metric_record = defaultdict(list)
+
+        if self.save:
+            for save_command in self.save:
+                file_name, data_name = save_command.split('#')
+                data = self.save_record[data_name]
+                save_dir = os.path.join(self.save_dir, str(iter))
+                os.makedirs(save_dir, exist_ok=True)
+                # handle each file extension here
+                if file_name.endswith('.txt'):
+                    with open(os.path.join(save_dir, file_name), 'w+') as w:
+                        for key, value in sorted(data):
+                            output = ' '.join(map(str, value.reshape(-1)))
+                            w.write(f'{key} {output}\n')
+                elif file_name.endswith('.wav'):
+                    # do things with data
+                    pass
+                elif file_name.endswith('.pt'):
+                    # do things with data
+                    pass
+                elif file_name.endswith('.png'): # something like attention map
+                    # do things with data
+                    pass 
+            
+            self.save_record = defaultdict(list)
 
         record_keys = list(self.record.keys())
         if not self.is_first_line_written:
@@ -170,11 +170,23 @@ class Logger():
     def register_one_record(self, packed_data, loss, size):
         if self.log_metrics:
             for key in self.needed_inputs:
-                self.metric_record[key].extend([(id, each_batch.reshape(-1).detach().cpu()) for id, each_batch in zip(packed_data['_ids'], packed_data[key].data)])
-                
-        for key, value in loss.items():
-            self.record[key].append(value.detach().cpu().numpy() * size)
-            self.record_size[key].append(size)
+                if packed_data[key].len != None:
+                    self.metric_record[key].extend([(id, each_batch[:_len].detach().cpu()) for id, each_batch, _len in zip(packed_data['_ids'], packed_data[key].data, packed_data[key].len)])
+                else:
+                    self.metric_record[key].extend([(id, each_batch.detach().cpu()) for id, each_batch in zip(packed_data['_ids'], packed_data[key].data)])
+
+        if self.save:
+            for save_command in self.save:
+                file_name, key = save_command.split('#')
+                if packed_data[key].len != None:
+                    self.save_record[key].extend([(id, each_batch[:_len].detach().cpu().numpy()) for id, each_batch, _len in zip(packed_data['_ids'], packed_data[key].data, packed_data[key].len)])
+                else:
+                    self.save_record[key].extend([(id, each_batch.detach().cpu().numpy()) for id, each_batch in zip(packed_data['_ids'], packed_data[key].data)])
+
+        if loss != None:
+            for key, value in loss.items():
+                self.record[key].append(value.detach().cpu().numpy() * size)
+                self.record_size[key].append(size)
     
 
 
