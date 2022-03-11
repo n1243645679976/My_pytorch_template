@@ -18,7 +18,7 @@ dataset:
     #  loss: _dataset_feat_y0
     label: ['score.txt']
     collate_fn: 'pad_to_max'
-    batch_size: 8
+    batch_size: 40
     fs: 16000
 
 
@@ -49,5 +49,5 @@ trainer:
 logger:
     logger_class: model.SVSNet.metric:SVSNet_metric
     log_metrics: True
-    logger_conf: conf/svsnet_logger.yaml
+    logger_conf: conf/svsnet_logger_svs20.yaml
     save: ['utt_score.txt#utt_score']

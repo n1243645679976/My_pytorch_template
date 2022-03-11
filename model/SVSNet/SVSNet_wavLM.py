@@ -1,3 +1,4 @@
+from re import X
 import torch
 import os
 import sys
@@ -6,6 +7,7 @@ sys.path.append(os.getcwd())
 from model.nn.layers import Conv1d, LSTM, Linear
 from model.nn.coattention import coattention
 from model.nn.lib_sincnet import SincNet
+import torch.nn.functional as F
 
 class ResidualBlockW(torch.nn.Module):
     def __init__(self, dilation):
@@ -14,13 +16,14 @@ class ResidualBlockW(torch.nn.Module):
         skipped_channel = 64
         gate_channel = 128
         res_channel = 64
-        self.input_conv = Conv1d(input_channel, gate_channel, kernel_size=3, dilation=dilation, padding=dilation)
+        self.input_conv = Conv1d(input_channel, gate_channel, kernel_size=3, dilation=dilation, padding=0)
         self.skipped_conv = Conv1d(gate_channel // 2, skipped_channel, kernel_size=1)
         self.res_conv = Conv1d(gate_channel // 2, res_channel, kernel_size=1)
         self.gc = gate_channel
-
+        self.padding = dilation * 2
     def forward(self, x):
         res = x
+        x = F.pad(x, (0, self.padding))
         gate_x = self.input_conv(x)
         xt, xs = torch.split(gate_x, self.gc // 2, dim=1)
         out = torch.tanh(xt) * torch.sigmoid(xs)
@@ -75,12 +78,14 @@ class regression_model(torch.nn.Module):
                                  )
         self.lm2emb = torch.nn.Sequential(Linear(768, 256), torch.nn.ReLU(), Linear(256, 256))
 
-    def encode_frame_embedding(self, x):
+    def encode_frame_embedding(self, x, frame_lengths):
         y = self.sincnet(x)
         for i in range(4):
             y = self.wavenet[i](y)
             y = self.downsample[i](y)
-        y = self.rnn(y.transpose(1,2))[0]
+        y = torch.nn.utils.rnn.pack_padded_sequence(y.transpose(1,2), frame_lengths.reshape(-1), batch_first=True, enforce_sorted=False)
+        y = self.rnn(y)[0]
+        y = torch.nn.utils.rnn.pad_packed_sequence(y, batch_first=True)[0]
         return y
     def encode_frame_score(self, x):
         y = self.encode_frame_embedding(x)
@@ -106,8 +111,8 @@ class regression_model(torch.nn.Module):
             frame_numX1 = torch.div(frame_numX1, d.kernel_size, rounding_mode='floor')
             frame_numX2 = torch.div(frame_numX2, d.kernel_size, rounding_mode='floor')
 
-        y1 = self.encode_frame_embedding(x1) # BTF
-        y2 = self.encode_frame_embedding(x2) # BTF
+        y1 = self.encode_frame_embedding(x1, frame_numX1) # BTF
+        y2 = self.encode_frame_embedding(x2, frame_numX2) # BTF
         wavlm_feat1 = self.lm2emb(wavlm_feat1)
         wavlm_feat2 = self.lm2emb(wavlm_feat2)
 
@@ -119,8 +124,10 @@ class regression_model(torch.nn.Module):
         for i in range(y1.shape[0]):
             newY1[i, :frame_numX1[i]] = y1[i, :frame_numX1[i]]
             newY1[i, frame_numX1[i]:frame_numX1[i]+lenWavLM_feat1[i]] = wavlm_feat1[i, :lenWavLM_feat1[i]]
+            newY1[i, frame_numX1[i]+lenWavLM_feat1[i]:] = 0
             newY2[i, :frame_numX2[i]] = y2[i, :frame_numX2[i]]
             newY2[i, frame_numX2[i]:frame_numX2[i]+lenWavLM_feat2[i]] = wavlm_feat2[i, :lenWavLM_feat2[i]]
+            newY2[i, frame_numX2[i]+lenWavLM_feat2[i]:] = 0
 
         y1 = newY1
         y2 = newY2
@@ -133,15 +140,18 @@ class regression_model(torch.nn.Module):
 
         atty1 = torch.softmax(cat_map, dim=2).bmm(y2)
         atty2 = torch.softmax(cat_map, dim=1).transpose(1, 2).bmm(y1)
+
         for i, (l1, l2) in enumerate(zip(frame_numX1, frame_numX2)):
             atty1[i, l1:] = 0
             atty2[i, l2:] = 0
+        
         
         diffy1 = torch.abs(atty1.sum(dim=1)-y1.sum(dim=1))
         diffy2 = torch.abs(atty2.sum(dim=1)-y2.sum(dim=1))
         for i, (l1, l2) in enumerate(zip(frame_numX1, frame_numX2)):
             diffy1[i] /= l1
             diffy2[i] /= l2
+            
         y1 = self.derive_model(diffy1)
         y2 = self.derive_model(diffy2)
         y = (y1 + y2) / 2
@@ -236,9 +246,25 @@ class batched_data():
 
 if __name__ == '__main__':
     import numpy as np
-    rm = regression_model('cpu')
-    x1len = [17664, 4801, 7972]
-    x1 = torch.randn(3, np.max(x1len))
-    x2len = [500, 7349, 2950]
-    x2 = torch.randn(3, np.max(x2len))
-    print(rm([batched_data(x1, torch.tensor(x1len).long().reshape(-1, 1)), batched_data(x2, torch.tensor(x2len).long().reshape(-1, 1))])[0].shape)
+    rm = WaveResNet(1, 64)
+    x1len = [3000, 2000, 1500]
+    x1 = torch.randn(3, 1, np.max(x1len))
+    x1[1] *= 10
+    x1[2] *= 100
+    for l in range(len(x1len)):
+        x1[l, x1len[l]:] = 0
+    
+    xx1 = []
+    xx1len = []
+    for i in [2, 0, 1]:
+        xx1.append(x1[i].unsqueeze(0))
+        xx1len.append(x1len[i])
+    x2 = torch.cat(xx1, dim=0)
+    print(x2.shape)
+    x2 = torch.cat([x2, torch.zeros(x2.shape[0], 1, 5000)], dim=2)
+    
+    y1 = rm(x1)
+    y2 = rm(x2)
+    # for j, i in enumerate([2, 0, 1]):
+    #     print(y1[i].sum())
+    #     print(y2[j].sum())

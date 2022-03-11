@@ -46,4 +46,4 @@ if __name__ == '__main__':
             trainer.model = model
             print(f'iteration: {it}')
             trainer.test(it)
-    test_logger.write_best()
+    #test_logger.write_best()

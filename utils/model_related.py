@@ -71,13 +71,14 @@ class model(torch.nn.Module):
 
             adapted_inputs = self.input_adaptor[module_key](inputs)
             outputs = self.moduledict[module_key](adapted_inputs)
-
+            
             for output_name, module_output in zip(self.module_outputs[module_key], outputs):
                 assert output_name not in packed_data
                 if isinstance(module_output, packed_batch):
                     packed_data[output_name] = module_output
                 else:
                     packed_data[output_name] = packed_batch(module_output)
+
         return packed_data
 
     def inference(self, x):
@@ -88,16 +89,7 @@ class model(torch.nn.Module):
     def load_model(self, resume):
         for key in self.modules_conf.keys():
             if resume:
-                printed_set = set()
-                printed_set1 = set()
-                import copy
-                q = {n:copy.deepcopy(p) for n, p in self.moduledict[key].named_parameters()}
                 self.moduledict[key].load_state_dict(resume[key])
-                k = torch.load('exp/train_svsnet_not_mean_svsnet_wavlm/result/snapshot.1')['model']
-                
-                #for n, p in self.moduledict[key].named_parameters():
-                #    if n == 'wavenet.0.first_conv.bias':
-                #        print(n, p)#torch.sum((q[n] != p).long()))
             else:
                 initial_model_filename = self.modules_conf.get('initial_model', None)
                 if initial_model_filename:

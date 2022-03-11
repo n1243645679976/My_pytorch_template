@@ -1,12 +1,12 @@
 fs=16000
-stage=0
+stage=10
 stop_stage=100
 
 train=train_svsnet_not_mean
 dev=test_svsnet_not_mean
 test=test_svsnet_not_mean
 test_svs20=test_svsnet_vcc20
-train_conf_svs20=conf/svsnet_wavlm_svs20.yaml
+train_conf_svs20=conf/svsnet_wavlm.yaml
 
 features=features
 feat_conf=conf/feat_extract_v2.yaml
@@ -63,5 +63,5 @@ if [ $stage -le 2 ] && [ $stop_stage -ge 2 ]; then
 fi
 if [ $stage -le 3 ] && [ $stop_stage -ge 3 ]; then
     echo "stage 3: testing svsnet, vcc20"
-    python test.py --test $test_svs20 --conf $train_conf_svs20 --exp $expdir --start $start_testing --end $end_testing --features $features --device cuda --extract_feature_online $extract_feature_online
+    python test.py --test $test_svs20 --conf $train_conf --exp $expdir --start $start_testing --end $end_testing --features $features --device cuda --extract_feature_online $extract_feature_online
 fi
