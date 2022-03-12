@@ -15,7 +15,7 @@ extract_feature_online="True"
 resume=""
 debug=""
 start_testing=0
-end_testing=500
+end_testing=30
 . ./utils/parse_options.sh
 
 set -u

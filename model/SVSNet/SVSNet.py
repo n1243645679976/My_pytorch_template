@@ -167,19 +167,21 @@ class classfication_model(torch.nn.Module):
         self.to(device)
         self.device=device
 
-    def encode_frame_embedding(self, x):
-        y = [self.sincnet(_x) for _x in x]
+    def encode_frame_embedding(self, x, frame_lengths):
+        y = self.sincnet(x)
         for i in range(4):
-            y = [self.wavenet[i](_y) for _y in y]
-            y = [self.downsample[i](_y) for _y in y]
-        y = [self.rnn(_y.transpose(1,2))[0] for _y in y]
+            y = self.wavenet[i](y)
+            y = self.downsample[i](y)
+        y = torch.nn.utils.rnn.pack_padded_sequence(y.transpose(1,2), frame_lengths.reshape(-1), batch_first=True, enforce_sorted=False)
+        y = self.rnn(y)[0]
+        y = torch.nn.utils.rnn.pad_packed_sequence(y, batch_first=True)[0]
         return y
     def encode_frame_score(self, x):
         y = self.encode_frame_embedding(x)
         y = [self.derive_model(_y) for _y in y]
         return y
 
-    def forward(self, batchxs, batchys):
+    def forward(self, batchxs):
         x1 = batchxs[0].data   # B*T
         x2 = batchxs[1].data   # B*T
         lenX1 = batchxs[0].len # B*1
@@ -191,27 +193,33 @@ class classfication_model(torch.nn.Module):
         frame_numX2 = torch.div(lenX2 - 250, 3, rounding_mode='floor')
         # downsample by maxpooling
         for d in self.downsample:
-            frame_numX1 //= d.kernel_size
-            frame_numX2 //= d.kernel_size
+            frame_numX1 = torch.div(frame_numX1, d.kernel_size, rounding_mode='floor')
+            frame_numX2 = torch.div(frame_numX2, d.kernel_size, rounding_mode='floor')
 
-        y1 = self.encode_frame_embedding(x1) # BTF
-        y2 = self.encode_frame_embedding(x2) # BTF
+        y1 = self.encode_frame_embedding(x1, frame_numX1) # BTF
+        y2 = self.encode_frame_embedding(x2, frame_numX2) # BTF
 
+        for i, (l1, l2) in enumerate(zip(frame_numX1, frame_numX2)):
+            y1[i, :, l1:] = 0
+            y2[i, :, l2:] = 0
+        
         cat = coattention(frame_numX1, frame_numX2)
         cat_map = cat(y1, y2)
 
         atty1 = torch.softmax(cat_map, dim=2).bmm(y2)
         atty2 = torch.softmax(cat_map, dim=1).transpose(1, 2).bmm(y1)
+
         for i, (l1, l2) in enumerate(zip(frame_numX1, frame_numX2)):
             atty1[i, l1:] = 0
             atty2[i, l2:] = 0
         
+
         diffy1 = torch.abs(atty1.sum(dim=1)-y1.sum(dim=1))
         diffy2 = torch.abs(atty2.sum(dim=1)-y2.sum(dim=1))
         for i, (l1, l2) in enumerate(zip(frame_numX1, frame_numX2)):
             diffy1[i] /= l1
             diffy2[i] /= l2
-        
+
         y1 = self.derive_model(diffy1)
         y2 = self.derive_model(diffy2)
         y = (y1 + y2) / 2
