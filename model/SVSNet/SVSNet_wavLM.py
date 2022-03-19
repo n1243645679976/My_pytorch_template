@@ -3,7 +3,6 @@ import torch
 import os
 import sys
 import inspect
-sys.path.append(os.getcwd())
 from model.nn.layers import Conv1d, LSTM, Linear
 from model.nn.coattention import coattention
 from model.nn.lib_sincnet import SincNet
@@ -159,10 +158,10 @@ class regression_model(torch.nn.Module):
             return self.forward(x, label)
 
 
-class classfication_model(torch.nn.Module):
-    def __init__(self, device='cpu'):
-        super(classfication_model, self).__init__(device)
-        self.sincnet = SincNet(N_cnn_lay=1, device=device)
+class classification_model(torch.nn.Module):
+    def __init__(self, conf):
+        super(classification_model, self).__init__()
+        self.sincnet = SincNet(N_cnn_lay=1)
         self.wavenet = torch.nn.ModuleList(
                         [WaveResNet() for i in range(4)])
         self.downsample = torch.nn.ModuleList(
@@ -176,9 +175,7 @@ class classfication_model(torch.nn.Module):
                                 torch.nn.ReLU(), torch.nn.Dropout(0.3),
                                 Linear(128, 4)
                                 )
-        self.criterion = torch.nn.CrossEntropyLoss()
-        self.to(device)
-        self.device=device
+        self.lm2emb = torch.nn.Sequential(Linear(768, 256), torch.nn.ReLU(), Linear(256, 256))
 
     def encode_frame_embedding(self, x, frame_lengths):
         y = self.sincnet(x)
@@ -253,7 +250,7 @@ class classfication_model(torch.nn.Module):
         y1 = self.derive_model(diffy1)
         y2 = self.derive_model(diffy2)
         y = (y1 + y2) / 2
-        y = y.reshape(-1, 4)
+        y = y.reshape(-1, 4, 1)
 
         outputs.append(y)
         return outputs

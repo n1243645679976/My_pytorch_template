@@ -28,7 +28,7 @@ class Trainer():
             criterion_conf = conf['loss'][criterion_name]
             criterion_class = dynamic_import(criterion_conf['criterion_class'])
             criterion_class_conf = criterion_conf.get('conf', {})
-            self.criterion[criterion_name] = criterion_class(criterion_class_conf)
+            self.criterion[criterion_name] = criterion_class(**criterion_class_conf)
             self.criterion_inputs[criterion_name] = criterion_conf.get('inputs')
             self.criterion_weight[criterion_name] = float(criterion_conf.get('weight', 1))
         

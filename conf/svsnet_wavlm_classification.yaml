@@ -1,7 +1,7 @@
 model: 
     modules:
         modules_1:
-            model_class: model.SVSNet.SVSNet:regression_model
+            model_class: model.SVSNet.SVSNet_wavLM:classification_model
             arch: 
                 conf: []
             # inputs: ['_dataset_']
@@ -12,10 +12,9 @@ model:
             # initial_model_adaptor:
             # input_adaptor: None
 
-
 dataset:
     #  loss: _dataset_feat_x0, _dataset_feat_x1, ..., when feature in features not in label
-    features: ['wav#wav.scp', 'wav#wav1.scp', 'score.txt']
+    features: ['wav#wav.scp', 'wav#wav1.scp', 'wavLM#wav.scp', 'wavLM#wav1.scp', 'score.txt']
     #  loss: _dataset_feat_y0
     label: ['score.txt']
     collate_fn: 'pad_to_max'
@@ -37,7 +36,7 @@ trainer:
     accum_grad: 1
     loss:
         utt_loss:
-            criterion_class: model.nn.losses:batchedMSELoss
+            criterion_class: model.nn.losses:batchedCELoss
             # conf:
             inputs: ['utt_score', '_dataset_feat_y0']
             weight: 1 
@@ -49,5 +48,5 @@ trainer:
 
 logger:
     log_metrics: True
-    logger_conf: conf/svsnet_logger_svs20.yaml
+    logger_conf: conf/svsnet_logger_classification_svs20.yaml
     save: ['utt_score.txt#utt_score']

@@ -11,8 +11,8 @@ from utils.dynamic_import import dynamic_import
 """
 ref: https://stackoverflow.com/questions/44904290/getting-duplicate-keys-in-yaml-using-python
 """
-from ruamel.yaml import YAML
-from ruamel.yaml.constructor import SafeConstructor
+from ruamel_yaml import YAML
+from ruamel_yaml.constructor import SafeConstructor
 def construct_yaml_map(self, node):
     # test if there are duplicate node keys
     data = []
@@ -60,8 +60,6 @@ class Logger():
             self.aggregate_functions = defaultdict(list)
 
             def dfs(command_conf):
-                if command_conf == 'all.lcc':
-                    raise Exception
                 if isinstance(command_conf[1], list):
                     # diction, command_conf[*][0] is key, command_conf[*][1] is the value
                     if isinstance(command_conf[1][0], tuple):

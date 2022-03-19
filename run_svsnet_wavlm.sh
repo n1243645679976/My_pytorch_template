@@ -6,12 +6,16 @@ train=train_svsnet_not_mean
 dev=test_svsnet_not_mean
 test=test_svsnet_not_mean
 test_svs20=test_svsnet_vcc20
-train_conf_svs20=conf/svsnet_wavlm.yaml
 
+#train=test_svsnet_vcc20_1
+#dev=test_svsnet_vcc20_1
+#test=test_svsnet_vcc20_1
+
+extract_feature="True"
 features=features
 feat_conf=conf/feat_extract_v2.yaml
 train_conf=conf/svsnet_wavlm.yaml
-extract_feature_online="True"
+extract_feature_online="False"
 resume=""
 debug=""
 start_testing=0
@@ -39,15 +43,19 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     if [ $extract_feature_online == "True" ]; then
         echo "Since extract_feature_online set to True, skip extracting features"
     else
-        for name in $train ; do #$dev $test; do
+        if [ $extract_feature == "True" ]; then
+            for name in $train $dev $test; do #$dev $test; do
     #        if [ $feat == 'silence' ]; then
     #            bash utils/get_silence.sh $name
     #        else
-                python utils/extract_features.py --outdir $features \
+                python extract_features.py --outdir $features \
                                                 --set $name \
                                                 --conf $feat_conf
     #       fi
-        done
+            done
+        else
+            echo "extract_feature set to 'True', skip extracting features from vcc18 dataset"
+        fi
     fi
 fi
 
@@ -61,7 +69,17 @@ if [ $stage -le 2 ] && [ $stop_stage -ge 2 ]; then
     echo "stage 2: testing svsnet"
     python test.py --test $test --conf $train_conf --exp $expdir --start $start_testing --end $end_testing --features $features --device cuda --extract_feature_online $extract_feature_online
 fi
+
 if [ $stage -le 3 ] && [ $stop_stage -ge 3 ]; then
-    echo "stage 3: testing svsnet, vcc20"
+    if [ $extract_feature == "True" ]; then
+        python utils/extract_features.py --outdir $features --set $test_svs20 --conf $feat_conf
+    else
+        echo "extract_feature set to 'True', skip extracting features from vcc20 dataset"
+    fi
+fi
+
+if [ $stage -le 4 ] && [ $stop_stage -ge 4 ]; then
+    echo "stage 4: testing svsnet, vcc20"
+    train_conf=conf/svsnet_wavlm_svs20.yaml
     python test.py --test $test_svs20 --conf $train_conf --exp $expdir --start $start_testing --end $end_testing --features $features --device cuda --extract_feature_online $extract_feature_online
 fi
