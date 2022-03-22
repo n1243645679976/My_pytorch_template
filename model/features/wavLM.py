@@ -11,10 +11,10 @@ import math
 import warnings
 from typing import Dict, Optional, Tuple
 import torch
-from torch import Tensor, nn
+from torch import Tensor, _pack_padded_sequence, nn
 from torch.nn import Parameter
 import torch.nn.functional as F
-
+from torch.nn.utils.rnn import PackedSequence, pad_packed_sequence, pad_sequence, pack_padded_sequence
 
 class TransposeLast(nn.Module):
     def __init__(self, deconstruct_idx=None):
@@ -1558,7 +1558,7 @@ class TransformerSentenceEncoderLayer(nn.Module):
 
         return x, attn, pos_bias
 
-from model.features.base import baseExtractor
+from .base import baseExtractor
 class extractor(baseExtractor):
     def __init__(self, conf):
         super().__init__(conf)
@@ -1576,16 +1576,33 @@ class extractor(baseExtractor):
         rep = self.model.extract_features(x)[0].reshape(-1, 768)
         return rep
     def forward(self, x):
+        """
+        input: x: signal or PackedSequence(B*T)
+        """
         with torch.no_grad():
-            # shape: q = lambda x: (x-80) // 320
-            x = x.reshape(1, -1)
-            feat = self.extract(torch.tensor(x).to(self.device))
-            return feat.to('cpu')
+            if isinstance(x, PackedSequence):
+                seq_unpacked, lens_unpacked = pad_packed_sequence(x, batch_first=True)
+                feat = [self.extract(seq_unpacked[i, :_len].reshape(1, -1).to(self.device)).to('cpu') for i, _len in enumerate(lens_unpacked)]
+                lens_output = torch.div(lens_unpacked - 80, 320, rounding_mode='floor')
+                feat = pad_sequence(feat, batch_first=True)
+                feat = pack_padded_sequence(feat, lens_output, batch_first=True, enforce_sorted=False)
+                return feat
+            else:
+                # shape: q = lambda x: (x-80) // 320
+                x = x.reshape(1, -1)
+                feat = self.extract(torch.tensor(x).to(self.device))
+                return feat.to('cpu')
 
 
 if __name__ == "__main__":
     wav_input_16khz = torch.randn(1,10320)
-    ext = extractor({'path':'pretrained_models/WavLM-Base.pt'})
+    ext = extractor({'path':'pretrained_models/WavLM-Base.pt', 'device': 'cpu'})
     rep = ext(wav_input_16khz)
-
     print(rep.shape, wav_input_16khz.shape)
+
+    len_wavs = [5000, 6000, 7000]
+    wav_input_16khz = [torch.randn(l) for l in len_wavs]
+    x = pad_sequence(wav_input_16khz, batch_first=True)
+    x = pack_padded_sequence(x, len_wavs, batch_first=True, enforce_sorted=False)
+    rep = ext(x)
+    print(rep)

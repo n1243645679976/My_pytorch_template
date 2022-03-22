@@ -28,7 +28,6 @@ if __name__ == '__main__':
     optimizer = get_optimizer(model, conf=conf['optimizer'], load_optimizer=load_model['optimizer'])
     iter_logger = Logger(exp=args.exp, args=args, conf=conf['logger'], log_name='train')
     dev_logger = Logger(exp=args.exp, args=args, conf=conf['logger'], log_name='dev')
-
     trainer = Trainer(args=args,
                       conf=conf['trainer'],
                       iter_dataloader=train_dataloader,

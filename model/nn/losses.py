@@ -19,6 +19,7 @@ class batchedCELoss(torch.nn.CrossEntropyLoss):
     # the broadcast is from back, 
     # this method is writen to broadcast from front
     def forward(self, x, y):
+        y = y.long()
         assert y.shape[0] == x.shape[0]
         for i in range(1, y.dim()):
             assert x.shape[i+1] == y.shape[i] or y.shape[i] == 1

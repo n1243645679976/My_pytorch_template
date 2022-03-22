@@ -146,10 +146,10 @@ class regression_model(torch.nn.Module):
             return self.forward(x, label)
 
 
-class classfication_model(torch.nn.Module):
-    def __init__(self, device='cpu'):
-        super(classfication_model, self).__init__(device)
-        self.sincnet = SincNet(N_cnn_lay=1, device=device)
+class classification_model(torch.nn.Module):
+    def __init__(self, conf):
+        super(classification_model, self).__init__()
+        self.sincnet = SincNet(N_cnn_lay=1)
         self.wavenet = torch.nn.ModuleList(
                         [WaveResNet() for i in range(4)])
         self.downsample = torch.nn.ModuleList(
@@ -164,8 +164,6 @@ class classfication_model(torch.nn.Module):
                                 Linear(128, 4)
                                 )
         self.criterion = torch.nn.CrossEntropyLoss()
-        self.to(device)
-        self.device=device
 
     def encode_frame_embedding(self, x, frame_lengths):
         y = self.sincnet(x)
@@ -223,7 +221,9 @@ class classfication_model(torch.nn.Module):
         y1 = self.derive_model(diffy1)
         y2 = self.derive_model(diffy2)
         y = (y1 + y2) / 2
-        y = y.reshape(-1, 4)
+        # Since Label is B * 1, we reshape to B, 4, 1 to apply CELoss in Pytorch
+        # More details: https://pytorch.org/docs/stable/generated/torch.nn.CrossEntropyLoss.html
+        y = y.reshape(-1, 4, 1)
 
         outputs.append(y)
         return outputs

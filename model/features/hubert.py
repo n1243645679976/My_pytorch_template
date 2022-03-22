@@ -3,6 +3,7 @@ import numpy as np
 import fairseq
 
 from .base import baseExtractor
+import fairseq
 class extractor(baseExtractor):
     def __init__(self, conf):
         super(extractor, self).__init__(conf)
@@ -26,3 +27,17 @@ class extractor(baseExtractor):
         feature = self.hubert_model(F, features_only=True, mask=False)['x']
         causal = feature.detach().to('cpu').numpy().astype(np.float32)
         return causal
+
+
+if __name__ == "__main__":
+    wav_input_16khz = torch.randn(1,10320)
+    ext = extractor({})
+    rep = ext(wav_input_16khz)
+    print(rep.shape, wav_input_16khz.shape)
+
+    len_wavs = [5000, 6000, 7000]
+    wav_input_16khz = [torch.randn(l) for l in len_wavs]
+    x = pad_sequence(wav_input_16khz, batch_first=True)
+    x = pack_padded_sequence(x, len_wavs, batch_first=True, enforce_sorted=False)
+    rep = ext(x)
+    print(rep)

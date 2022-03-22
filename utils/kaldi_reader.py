@@ -1,4 +1,6 @@
 import kaldiio
+
+
 class KaldiReader:
     def __init__(self, rspecifier, return_shape=False, segments=None):
         self.rspecifier = rspecifier
@@ -11,5 +13,3 @@ class KaldiReader:
                 if self.return_shape:
                     array = array.shape
                 yield key, array
-
-

@@ -1,15 +1,12 @@
 fs=16000
-stage=0
+stage=10
 stop_stage=100
 
 train=train_svsnet_not_mean
 dev=test_svsnet_not_mean
 test=test_svsnet_not_mean
-test_vcc20=test_svsnet_vcc20
+test_svs20=test_svsnet_vcc20
 
-train=template
-dev=template
-test=template
 features=features
 feat_conf=conf/feat_extract_v2.yaml
 train_conf=conf/svsnet_v2.yaml
@@ -41,29 +38,43 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     if [ $extract_feature_online == "True" ]; then
         echo "Since extract_feature_online set to True, skip extracting features"
     else
-        for name in $train ; do #$dev $test; do
-    #        if [ $feat == 'silence' ]; then
-    #            bash utils/get_silence.sh $name
-    #        else
-                python extract_features.py --outdir $features \
-                                           --set $name \
-                                           --conf $feat_conf 
-    #       fi
-        done
+        if [ $extract_feature == "True" ]; then
+            for name in $train $dev $test; do #$dev $test; do
+        #        if [ $feat == 'silence' ]; then
+        #            bash utils/get_silence.sh $name
+        #        else
+                    python extract_features.py --outdir $features \
+                                                    --set $name \
+                                                    --conf $feat_conf
+        #       fi
+            done
+        else
+            echo "extract_feature set to 'True', skip extracting features from vcc18 dataset"
+        fi
     fi
 fi
 
 expdir=exp/${train}_`basename ${train_conf%%.*}`
 if [ $stage -le 1 ] && [ $stop_stage -ge 1 ]; then
-    echo "stage 1: training mosnet"
+    echo "stage 1: training svsnet"
     python main.py --train $train --dev $dev  --conf $train_conf --features $features --exp $expdir --device cuda --resume "$resume" --extract_feature_online $extract_feature_online
 fi
 
 if [ $stage -le 2 ] && [ $stop_stage -ge 2 ]; then
-    echo "stage 2: testing mosnet"
+    echo "stage 2: testing svsnet"
     python test.py --test $test --conf $train_conf --exp $expdir --start $start_testing --end $end_testing --features $features --device cuda --extract_feature_online $extract_feature_online
 fi
+
 if [ $stage -le 3 ] && [ $stop_stage -ge 3 ]; then
-    echo "stage 3: testing mosnet, vcc20"
-    python test.py --test $test_vcc20 --conf $train_conf --exp $expdir --start $start_testing --end $end_testing --features $features --device cuda --extract_feature_online $extract_feature_online
+    if [ $extract_feature == "True" ]; then
+        python utils/extract_features.py --outdir $features --set $test_svs20 --conf $feat_conf
+    else
+        echo "extract_feature set to 'True', skip extracting features from vcc20 dataset"
+    fi
+fi
+
+if [ $stage -le 4 ] && [ $stop_stage -ge 4 ]; then
+    echo "stage 4: testing svsnet, vcc20"
+    train_conf=conf/svsnet_v2_svs20.yaml
+    python test.py --test $test_svs20 --conf $train_conf --exp $expdir --start $start_testing --end $end_testing --features $features --device cuda --extract_feature_online $extract_feature_online
 fi

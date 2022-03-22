@@ -1,0 +1,48 @@
+utt_lcc:
+    all.lcc:
+        de_duplicate.mean:
+            orig.argmax:
+                utt_score
+        de_duplicate.mean:
+            _dataset_feat_y0
+utt_srcc:
+    all.srcc:
+        de_duplicate.mean:
+            orig.argmax:
+                utt_score
+        de_duplicate.mean:
+            _dataset_feat_y0
+utt_mse:
+    all.mse:
+        de_duplicate.mean:
+            orig.argmax:
+                utt_score
+        de_duplicate.mean:
+            _dataset_feat_y0
+sys_lcc:
+    all.lcc:
+        svs18.mean:
+            de_duplicate.mean:
+                _dataset_feat_y0
+        svs18.mean:
+            de_duplicate.mean:
+                orig.argmax:
+                    utt_score
+sys_srcc:
+    all.srcc:
+        svs18.mean:
+            de_duplicate.mean:
+                _dataset_feat_y0
+        svs18.mean:
+            de_duplicate.mean:
+                orig.argmax:
+                    utt_score
+sys_mse:
+    all.mse:
+        svs18.mean:
+            de_duplicate.mean:
+                _dataset_feat_y0
+        svs18.mean:
+            de_duplicate.mean:
+                orig.argmax:
+                    utt_score

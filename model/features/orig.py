@@ -4,9 +4,9 @@ class extractor(baseExtractor):
     def get_inputs_nums(self):
         return 1
     def get_feature_name(self):
-        return 'lcc'
+        return 'orig'
     def extract(self, x):
-        return np.mean(x)
-    def forward(self, x):
-        return torch.mean(x.float())
-
+        # we don't process wav raw feature
+        return x
+    def forward(self,x):
+        return x
