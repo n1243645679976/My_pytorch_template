@@ -137,10 +137,17 @@ class Logger():
                         for key, value in sorted(data):
                             output = ' '.join(map(str, value.reshape(-1)))
                             w.write(f'{key} {output}\n')
-                elif file_name.endswith('.wav'):
+                elif file_name == 'pt':
                     # do things with data
-                    pass
-                elif file_name.endswith('.pt'):
+                    for key, value in sorted(data):
+                        torch.save(value, os.path.join(save_dir, key + '.pt'))
+                elif file_name == 'scp':
+                    import kaldiio
+                    save_data = {}
+                    for key, value in sorted(data):
+                        save_data[key] = value
+                    kaldiio.save_ark(os.path.join(save_dir, file_name + '.ark'), save_data, scp=os.path.join(save_dir, data_name + '.scp'))
+                elif file_name.endswith('.wav'):
                     # do things with data
                     pass
                 elif file_name.endswith('.png'): # something like attention map
@@ -167,14 +174,14 @@ class Logger():
         self.record = defaultdict(list)
         self.record_size = defaultdict(list)
             
-    def register_one_record(self, packed_data, loss, size):
+    def register_one_record(self, packed_data, size):
         if self.log_metrics:
             for key in self.needed_inputs:
                 if packed_data[key].len != None:
                     self.metric_record[key].extend([(id, each_batch[:_len].detach().cpu()) for id, each_batch, _len in zip(packed_data['_ids'], packed_data[key].data, packed_data[key].len)])
                 else:
                     self.metric_record[key].extend([(id, each_batch.detach().cpu()) for id, each_batch in zip(packed_data['_ids'], packed_data[key].data)])
-
+        print(self.save)
         if self.save:
             for save_command in self.save:
                 file_name, key = save_command.split('#')
@@ -183,7 +190,9 @@ class Logger():
                 else:
                     self.save_record[key].extend([(id, each_batch.detach().cpu().numpy()) for id, each_batch in zip(packed_data['_ids'], packed_data[key].data)])
 
+        loss = packed_data.get('_loss', None)
         if loss != None:
+            loss = loss.data
             for key, value in loss.items():
                 self.record[key].append(value.detach().cpu().numpy() * size)
                 self.record_size[key].append(size)

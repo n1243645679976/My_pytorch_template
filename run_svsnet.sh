@@ -7,10 +7,13 @@ dev=test_svsnet_not_mean
 test=test_svsnet_not_mean
 test_vcc20=test_svsnet_vcc20
 
+train=template
+dev=template
+test=template
 features=features
 feat_conf=conf/feat_extract_v2.yaml
 train_conf=conf/svsnet_v2.yaml
-extract_feature_online="True"
+extract_feature_online="False"
 resume=""
 debug=""
 start_testing=0
@@ -42,9 +45,9 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     #        if [ $feat == 'silence' ]; then
     #            bash utils/get_silence.sh $name
     #        else
-                python utils/extract_features.py --outdir $features \
-                                                --set $name \
-                                                --conf $feat_conf
+                python extract_features.py --outdir $features \
+                                           --set $name \
+                                           --conf $feat_conf 
     #       fi
         done
     fi

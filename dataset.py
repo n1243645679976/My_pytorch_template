@@ -94,7 +94,7 @@ class Dataset(torch.utils.data.Dataset):
                     self.data[feat] = {}
                     for line in f.read().splitlines():
                         key, value = line.split(' ', maxsplit=1)
-                        self.data[feat][key] = list(map(lambda x: torch.tensor(float(x)).reshape(1, -1), value))
+                        self.data[feat][key] = torch.tensor(list(map(float, value.split()))).reshape(-1)
             
             ## others:
             ##   e.g.  spectrogram#wav.scp, spectrogram#clean_wav.scp -> use conf/spectrogram.yaml to extract data/{data}/wav.scp or data/{data}/clean_wav.scp
@@ -103,7 +103,7 @@ class Dataset(torch.utils.data.Dataset):
             else:
                 if self.extract_feature_online:
                     feat_conf_file = feat.split('#')[0]
-                    with open(f'conf/{feat_conf_file}.yaml') as f:
+                    with open(f'conf/features/{feat_conf_file}.yaml') as f:
                         feat_conf = yaml.safe_load(f)
                         feat_conf['fs'] = conf['fs']
                     self.extractors[feat] = importlib.import_module(f'model.features.{feat_conf["feature"]}').extractor(feat_conf)

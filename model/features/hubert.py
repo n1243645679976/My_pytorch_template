@@ -1,4 +1,7 @@
 import torch
+import numpy as np
+import fairseq
+
 from .base import baseExtractor
 class extractor(baseExtractor):
     def __init__(self, conf):

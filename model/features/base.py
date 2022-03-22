@@ -1,5 +1,6 @@
 import abc
 import torch
+from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 class baseExtractor(torch.nn.Module, abc.ABC):
     def __init__(self, conf):
@@ -11,7 +12,7 @@ class baseExtractor(torch.nn.Module, abc.ABC):
     @abc.abstractmethod
     def get_feature_name(self):
         raise NotImplemented
-
+        
     def get_default_input_filenames(self):
         """
         if wavscp_nums == 1: ['wav.scp']

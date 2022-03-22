@@ -21,7 +21,7 @@ if __name__ == '__main__':
                       device=args.device)
     test_dataloader = Dataset(feature_dir=args.features, data=args.test, conf=conf['dataset'], extract_feature_online=args.extract_feature_online, device=args.device).get_dataloader()
     optimizer = get_optimizer(model, conf=conf['optimizer'], load_optimizer=load_model['optimizer'])
-    test_logger = Logger(exp=args.exp, args=args, conf=conf['logger'], log_name='test')
+    test_logger = Logger(exp=args.exp, args=args, conf=conf['logger'], log_name=args.test)
 
     trainer = Trainer(args=args,
                       conf=conf['trainer'],

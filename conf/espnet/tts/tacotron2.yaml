@@ -1,0 +1,34 @@
+model: 
+    modules:
+        tacotron:
+            input_adaptor: model.adaptor.espnet_tacotron2:espnetTacotron2Adaptor
+            model_class: espnet.nets.pytorch_backend.e2e_tts_tacotron2:Tacotron2
+            config_file: conf/espnet/tts/train_pytorch_tacotron2.yaml
+            freeze: False
+            output: ['_loss']
+
+dataset:
+    features: ['tokenid.list', 'fbank#wav.scp', 'resemblyzer#wav.scp']
+    collate_fn: 'pad_to_max'
+    batch_size: 40
+    fs: 16000
+
+
+# multiple_optimizer
+optimizer:
+    type: 'Adam'
+    conf:
+        lr: 0.0001
+
+trainer:
+    iteration_type: 'iterations'
+    iterations: 100000
+    save_per_iterations: 10000
+    eval_per_iterations: 100
+    accum_grad: 1
+
+logger:
+    log_metrics: False
+    #save: ['pt#generate_speech']
+    #logger_conf: conf/svsnet_logger_svs20.yaml
+    #save: ['utt_score.txt#utt_score']

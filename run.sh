@@ -5,6 +5,9 @@ stop_stage=100
 train=train_mosnet_mean
 dev=dev_mosnet_mean
 test=test_mosnet_mean
+train=template
+test=template
+dev=template
 
 features=features
 feat_conf=conf/feat_extract_v2.yaml
@@ -41,7 +44,7 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     #        if [ $feat == 'silence' ]; then
     #            bash utils/get_silence.sh $name
     #        else
-                python utils/extract_features.py --outdir $features \
+                python extract_features.py --outdir $features \
                                                 --set $name \
                                                 --conf $feat_conf
     #       fi

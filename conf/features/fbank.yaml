@@ -1,0 +1,8 @@
+feature: fbank
+n_mels: 80
+n_fft: 1024
+n_shift: 256
+win_length: 1024
+window: hann
+fmin: 80
+fmax: 7600

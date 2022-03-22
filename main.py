@@ -5,6 +5,8 @@ from utils.optimizer import get_optimizer
 from utils.parse_config import get_train_config
 from utils.model_related import get_model
 from utils.logger import Logger
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
 if __name__ == '__main__':
