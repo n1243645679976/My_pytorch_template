@@ -1,0 +1,64 @@
+model: 
+    modules:
+        modules_1:
+            model_class: model.MOSNet.MOSNet:MOSNet
+            input: ['_dataset_feat_x0']
+            arch: 
+                conf: 
+                    conv_encoder:
+                        layers: 12
+                        channel: [16, 16, 16, 32, 32, 32, 64, 64, 128, 128, 128]
+                        activations: ['relu', 'relu', 'relu', 'relu', 'relu', 'relu', 'relu', 'relu', 'relu', 'relu', 'relu', 'relu']
+                        kernel: [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]
+                        stride: [3, 1, 3, 1, 1, 3, 1, 1, 3, 1, 1, 3]
+                    
+                    lstm_encoder:
+                        layers: 1
+                        hidden_size: [128]
+                        bidirectional: [True]
+                    
+                    decoder:
+                        layers: 2
+                        hidden_size: [128, 1]
+                        activations: ['relu', '']
+                        dropout: [0, 0]
+
+            output: ['frame_score', 'utt_score']
+            freeze: False
+
+dataset:
+    features: ['spectrogram#wav.scp', 'score.txt']
+    label: ['score.txt']
+    collate_fn: 'pad_to_max'
+    batch_size: 64
+    fs: 16000
+
+
+# multiple_optimizer
+optimizer:
+    type: 'Adam'
+    conf:
+        lr: 0.0001
+
+trainer:
+    iteration_type: 'epoch'
+    iterations: 30
+    save_per_iterations: 1
+    eval_per_iterations: 1
+    accum_grad: 1
+    loss:
+        utt_loss:
+            criterion_class: model.nn.losses:batchedMSELoss
+            # conf:
+            inputs: ['utt_score', '_dataset_feat_y0']
+            weight: 1 
+        frame_loss:
+            criterion_class: model.nn.losses:batchedMSELoss
+            # conf:
+            inputs: ['frame_score', '_dataset_feat_y0']
+            weight: 1 
+
+logger:
+    log_metrics: True
+    logger_conf: conf/MOSNet/mosnet_logger.yaml
+    save: ['utt_score.txt#utt_score']

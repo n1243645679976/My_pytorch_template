@@ -179,7 +179,6 @@ class Logger():
                     self.metric_record[key].extend([(id, each_batch[:_len].detach().cpu()) for id, each_batch, _len in zip(packed_data['_ids'], packed_data[key].data, packed_data[key].len)])
                 else:
                     self.metric_record[key].extend([(id, each_batch.detach().cpu()) for id, each_batch in zip(packed_data['_ids'], packed_data[key].data)])
-        print(self.save)
         if self.save:
             for save_command in self.save:
                 file_name, key = save_command.split('#')

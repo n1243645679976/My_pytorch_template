@@ -40,7 +40,7 @@ class Trainer():
     
     def get_loss(self, packed_data):
         if '_loss' not in packed_data:
-            packed_data['_loss'] = packed_batch({'overall_loss':torch.tensor(0.)})
+            packed_data['_loss'] = packed_batch({'overall_loss':0})
         loss = {}
         overall_loss = 0
         for criterion_name in self.criterion.keys():
