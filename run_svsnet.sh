@@ -8,8 +8,8 @@ test=test_svsnet_not_mean
 test_svs20=test_svsnet_vcc20
 
 features=features
-feat_conf=conf/feat_extract_v2.yaml
-train_conf=conf/svsnet_v2.yaml
+feat_conf=conf/SVSNet/feat_extract_v2.yaml
+train_conf=conf/SVSNet/svsnet_v2.yaml
 extract_feature_online="False"
 resume=""
 debug=""
@@ -38,19 +38,15 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     if [ $extract_feature_online == "True" ]; then
         echo "Since extract_feature_online set to True, skip extracting features"
     else
-        if [ $extract_feature == "True" ]; then
-            for name in $train $dev $test; do #$dev $test; do
-        #        if [ $feat == 'silence' ]; then
-        #            bash utils/get_silence.sh $name
-        #        else
-                    python extract_features.py --outdir $features \
-                                                    --set $name \
-                                                    --conf $feat_conf
-        #       fi
-            done
-        else
-            echo "extract_feature set to 'True', skip extracting features from vcc18 dataset"
-        fi
+        for name in $train $dev $test; do #$dev $test; do
+    #        if [ $feat == 'silence' ]; then
+    #            bash utils/get_silence.sh $name
+    #        else
+                python extract_features.py --outdir $features \
+                                                --set $name \
+                                                --conf $feat_conf
+    #       fi
+        done
     fi
 fi
 

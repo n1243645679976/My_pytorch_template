@@ -11,8 +11,13 @@ from utils.dynamic_import import dynamic_import
 """
 ref: https://stackoverflow.com/questions/44904290/getting-duplicate-keys-in-yaml-using-python
 """
-from ruamel_yaml import YAML
-from ruamel_yaml.constructor import SafeConstructor
+try:
+    from ruamel_yaml import YAML
+    from ruamel_yaml.constructor import SafeConstructor
+except Exception as e:
+    from ruamel.yaml import YAML
+    from ruamel.yaml.constructor import SafeConstructor
+    
 def construct_yaml_map(self, node):
     # test if there are duplicate node keys
     data = []

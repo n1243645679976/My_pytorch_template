@@ -157,34 +157,48 @@ class espnetTacotron2Adaptor(baseAdaptor):
         return [outs.unsqueeze(0)]
 
 class espnetTacotron2AdaptorSpkemb(baseAdaptor):
-    def __init__(self, conf):
-        super(espnetTacotron2Adaptor, self).__init__()
+    def __init__(self, conf_file):
+        super(baseAdaptor, self).__init__()
         parser = configargparse.ArgumentParser()
         parser.add("--config", is_config_file=True, help="config file path")
         parser.add("--idim", help='input_dimension')
         parser.add("--odim", help='output_dimension')
         parser.add('--inference_conf', help='inference config file')
 
-        
-        parser = model_class.add_argument(parser)
-        args = parser.parser(['--config', conf_file])
+        model_class = dynamic_import(conf_file['model_class'])
+        parser = model_class.add_arguments(parser)
+        args = parser.parse_args(['--config', conf_file['config_file']])
         self.model = model_class(args.idim, args.odim)
         inference_parser = get_parser()
         self.inference_args = inference_parser.parser(['--config', args.inference_conf])
         
-    def forward(self, batchxs):
-        xs = batchxs[0].data
-        ilens = batchxs[0].len
-        ys = batchxs[1].data
-        olens = batchxs[1].len
-        spkemb = batchxs[2].data
-        loss = self.model(xs, ilens, ys, olens, spkemb=spkemb)
+    def forward(self, packed_data):
+        xs = packed_data[0].data.long()
+        ilens = packed_data[0].len
+        ys = packed_data[1].data
+        olens = packed_data[1].len
+        spkemb = packed_data[2].data
+
+        sortlist = [(x, ilen, y, olen) for x, ilen, y, olen in zip(xs, ilens, ys, olens)]
+        sortlist = sorted(sortlist, key=lambda x:-x[1])
+        xs = torch.cat([s[0].unsqueeze(0) for s in sortlist], dim=0)
+        ilens = torch.cat([s[1].unsqueeze(0) for s in sortlist], dim=0)
+        ys = torch.cat([s[2].unsqueeze(0) for s in sortlist], dim=0)
+        olens = torch.cat([s[3].unsqueeze(0) for s in sortlist], dim=0)
+
+        labels = torch.zeros(ys.shape[0], ys.shape[1]).to(ys.device)
+        for i, l in enumerate(olens):
+            labels[i, l-1:] = 1.0
+        loss = self.model(xs=xs, ilens=ilens, ys=ys, labels=labels, olens=olens)
+
+        loss = {'overall_loss':loss}
+
 
         _loss = {'overall_loss': loss}
-        return _loss
+        return [loss]
 
     def inference(self, packed_data):
-        xs = packed_data[0].data
+        xs = packed_data[0].data.long().reshape(-1)
         spkemb = packed_data[1].data
-        outs, probs, att_ws = self.model(xs, self.inference_args, spkemb-spkemb)
-        return outs
+        outs, probs, att_ws = self.model.inference(xs, self.inference_args)
+        return [outs.unsqueeze(0)]

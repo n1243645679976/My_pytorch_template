@@ -158,7 +158,7 @@ class Dataset(torch.utils.data.Dataset):
                                 self.wavdict[wavfile] = wav
                             elif wavfile.endswith('.pt'):
                                 wav = torch.load(wavfile)
-                            # you can add some condition lik e".endswtih('.png')" or other here to read it by some file reading method
+                            # you can add some condition like ".endswtih('.png')" or other extensions here to read it by some file reading method
                         wavs.append(self.wavdict[wavfile])
                     self.data[feat][key] = self.extractors[feat](*wavs)
                 else:

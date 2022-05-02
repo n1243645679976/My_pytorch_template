@@ -48,5 +48,5 @@ trainer:
 
 logger:
     log_metrics: True
-    logger_conf: conf/svsnet_logger.yaml
+    logger_conf: conf/SVSNet/svsnet_logger.yaml
     save: ['utt_score.txt#utt_score']
