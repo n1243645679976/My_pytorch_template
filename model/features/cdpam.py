@@ -17,3 +17,5 @@ class extractor(baseExtractor):
         x = x.reshape(1, -1)
         y = y.reshape(1, -1)
         return torch.tensor(self.extract(x, y)).reshape(1)
+    def get_output_dim(self):
+        return 1

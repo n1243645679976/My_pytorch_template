@@ -1,0 +1,62 @@
+model: 
+    modules:
+        modules_1:
+            model_class: model.UTMOS.model:Model
+            inputs: ['_dataset_feat_x0', '_dataset_feat_x1', '_dataset_feat_x2', '_dataset_feat_x3', '_dataset_feat_x4', '_ids', '_dataset_feat_y0']
+            arch: 
+                conf: 
+                        hidden_dim: 256
+                        emb_dim: 256
+                        out_dim: 256
+                        n_lstm_layers: 3
+                        vocab_size: 2048
+                        n_domains: 5
+                        domain_dim: 128
+
+                        judge_dim: 128
+                        num_judges: 3500
+                        hidden_dim: 2048
+                        range_clipping: False
+                        pref_mode: pref
+
+
+            output: ['pred_pref_score', 'gt_pref_score', 'pred_pref_utt_score', 'pred_pref_utt_class_score', 'ids']
+            freeze: False
+
+dataset:
+    features: ['wav2vec_small#wav.scp', 'text.listemb', 'ref.listemb', 'domain.emb', 'judge_id.emb', 'score.txt']
+    label: ['score.txt']
+    collate_fn: 'pad_to_max'
+    batch_size: 64
+    fs: 16000
+
+
+# multiple_optimizer
+optimizer:
+    type: 'Adam'
+    conf:
+        lr: 0.0001
+
+trainer:
+    iteration_type: 'iteration'
+    iterations: 120000
+    save_per_iterations: 3000
+    eval_per_iterations: 3000
+    accum_grad: 1
+    loss:
+        frame_loss:
+            criterion_class: model.nn.losses:batchedCELoss
+            # conf:
+            inputs: ['pred_pref_score', 'gt_pref_score']
+            weight: 1 
+        utt_loss:
+            criterion_class: model.nn.losses:batchedCELoss
+            # conf:
+            inputs: ['pred_pref_utt_class_score', 'gt_pref_score']
+            weight: 1 
+
+
+logger:
+    log_metrics: True
+    logger_conf: conf/UTMOS/logger.yaml
+    save: ['pred_pref_utt_score.txt#pred_pref_utt_score', 'gt_pref_score.txt#gt_pref_score', 'ids.str#ids']

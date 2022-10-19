@@ -7,3 +7,5 @@ class extractor(baseExtractor):
 
     def forward(self, x):
         return x.argmax(dim=0)
+    def get_output_dim(self):
+        return 1

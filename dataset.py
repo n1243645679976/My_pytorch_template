@@ -3,19 +3,25 @@ import yaml
 import torch
 import librosa
 import importlib
+import shutil
 from collections import defaultdict
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
+from utils.get_rand import get_random
+from utils.dynamic_import import dynamic_import
+import math
+import functools
 
 class packed_batch():
     def __init__(self, data, data_len=None):
         self.data = data
         self.len = data_len
     def __repr__(self):
+        return f'{self.data=}, {self.len=}'
         return f'data shape: {self.data.shape}, length of data: {self.len}'
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, feature_dir, data, conf, extract_feature_online=False, device='cpu', inferring=False):
+    def __init__(self, feature_dir, data, conf, stage, train_data=None, extract_feature_online=False, device='cpu'):
         """
         conf['feature']: [feature_1, feature_2, ..., feature_n] (e.g. ['spectrogram', 'hubert', 'score.txt'])
         conf['label']:   [feature_1, feature_2] (e.g. ['score.txt'])
@@ -31,21 +37,28 @@ class Dataset(torch.utils.data.Dataset):
         self.conf = conf
         self.key_list = [] # for iter in __getitem__
         self.feat_list = conf['features'] # for iter in __getitem__
-        self.inferring = inferring # for iter in __getitem__
+        self.stage = stage
         self.label_list = conf.get('label', []) # for exclude in __getitem__
-        self.extract_feature_online = extract_feature_online # for iter in __getitem__
+        self.extract_feature_online = (extract_feature_online.lower() == 'true')     # for iter in __getitem__
 
         self.feature_dir = feature_dir
         self.extractors = {}
 
         self.dir = data
         self.data = {}
-        self.collate_fn = conf['collate_fn'] # for get_dataloader use
-        self.batch_size = conf['batch_size'] # for get_dataloader use
+        self.collate_fns = conf['collate_fns'] # for get_dataloader use
+        self.batch_size = conf['batch_size'].get(stage, conf['batch_size']['_default']) # for get_dataloader use
+        self.augment = defaultdict(list)
         self.feat_key_wav_dict = defaultdict(lambda : defaultdict(lambda : defaultdict(None)))
         self.trial_keys = defaultdict(lambda : defaultdict(None))
         self.wavdict = defaultdict(list)
         self.device = device
+
+        for aug_feature, aug_confs in conf.get('data_augmentation', {}).items():
+            for aug_conf in aug_confs:
+                aug_class = dynamic_import(aug_conf['augment'])
+                aug_method = aug_class(**aug_conf['conf'])
+                self.augment[aug_feature].append(aug_method)
 
         # use 'files_id' or 'wav.scp' to retrieve file key for iteration
         if os.path.isfile(os.path.join('data', data, 'files_id')):
@@ -69,22 +82,30 @@ class Dataset(torch.utils.data.Dataset):
             ##   diction write in to .embid
             elif feat.endswith('.emb'):
                 id = 0
+                key2value = {}
+                if train_data:
+                    shutil.copy(os.path.join('data', train_data, feat + 'id'), os.path.join('data', data, feat + 'id'))
+
                 if os.path.isfile(os.path.join('data', data, feat + 'id')):
                     with open(os.path.join('data', data, feat + 'id')) as f:
                         for line in sorted(f.read().splitlines()):
-                            key, _id = line.split()
-                            self.data[feat][key] = torch.tensor(_id).long().reshape(1)
-                        id = _id + 1
+                            emb, _id = line.split()
+                            _id = int(_id)
+                            key2value[emb] = _id
+                            id = max(id, _id + 1)
+
                 with open(os.path.join('data', data, feat)) as f:
                     self.data[feat] = {}
                     for line in sorted(f.read().splitlines()):
-                        key, value = line.split()
-                        if key not in self.data[feat]:
-                            self.data[feat][key] = torch.tensor(id).long().reshape(1)
+                        key, emb = line.split()
+                        if emb not in key2value:
+                            key2value[emb] = id
                             id += 1
+                        self.data[feat][key] = torch.tensor(key2value[emb]).long().reshape(1)
+
                 with open(os.path.join('data', data, feat + 'id'), 'w+') as w:
-                    for key, value in self.data[feat].items():
-                        w.write(f'{key} {value}\n')
+                    for emb, _id in key2value.items():
+                        w.write(f'{emb} {_id}\n')
             
             ## list: {id} {float1} {float2} ...
             ## e.g. wav1 1.1 2.1 3.1
@@ -95,7 +116,81 @@ class Dataset(torch.utils.data.Dataset):
                     for line in f.read().splitlines():
                         key, value = line.split(' ', maxsplit=1)
                         self.data[feat][key] = torch.tensor(list(map(float, value.split()))).reshape(-1)
+
+            ## listemb: {id} {token1} {token2} {token3}
+            ## e.g. wav1 aa b c
+            ##      wav2 aa aa d
+            ##   -> wav1: [1, 2, 3]
+            ##   -> wav2: [1, 1, 4]
+            elif feat.endswith('.listemb'):
+                id = 1 # start from 1 to avoid pad by 0
+                key2value = {}
+                if train_data:
+                    shutil.copy(os.path.join('data', train_data, feat + 'id'), os.path.join('data', data, feat + 'id'))
+
+                if os.path.isfile(os.path.join('data', data, feat + 'id')):
+                    with open(os.path.join('data', data, feat + 'id')) as f:
+                        for line in sorted(f.read().splitlines()):
+                            emb, _id = line.split()
+                            _id = int(_id)
+                            key2value[emb] = _id
+                            id = max(id, _id + 1)
+
+                with open(os.path.join('data', data, feat)) as f:
+                    self.data[feat] = {}
+                    for line in sorted(f.read().splitlines()):
+                        key, embs = line.split(maxsplit=1)
+                        listemb = []
+                        for emb in embs.split():
+                            if emb not in key2value:
+                                key2value[emb] = id
+                                id += 1
+                            listemb.append(torch.tensor(key2value[emb]).long().reshape(1))
+                        self.data[feat][key] = torch.cat(listemb, dim=0)
+
+                with open(os.path.join('data', data, feat + 'id'), 'w+') as w:
+                    for emb, _id in key2value.items():
+                        w.write(f'{emb} {_id}\n')
             
+            ## listchar: {id} {token1}{token2}{token3}
+            ## e.g. wav1 abc
+            ##      wav2 ab cd
+            ##   generate dict: {'a':0, 'b':1, 'c':2, ' ':3, 'd':4}
+            ##   -> wav1: [1, 2, 3]
+            ##   -> wav2: [1, 2, 4, 3, 5]
+            elif feat.endswith('.listchar'):
+                id = 1 # start from 1 to avoid pad by 0
+                key2value = {}
+                if train_data:
+                    shutil.copy(os.path.join('data', train_data, feat + 'id'), os.path.join('data', data, feat + 'id'))
+
+                if os.path.isfile(os.path.join('data', data, feat + 'id')):
+                    with open(os.path.join('data', data, feat + 'id')) as f:
+                        for line in sorted(f.read().splitlines()):
+                            emb, _id = line[0], line[2:]
+                            _id = int(_id)
+                            key2value[emb] = _id
+                            id = max(id, _id + 1)
+
+                with open(os.path.join('data', data, feat)) as f:
+                    self.data[feat] = {}
+                    for line in sorted(f.read().splitlines()):
+                        key, embs = line.split(maxsplit=1)
+                        listemb = []
+                        for emb in embs:
+                            if emb not in key2value:
+                                key2value[emb] = id
+                                id += 1
+                            listemb.append(torch.tensor(key2value[emb]).long().reshape(1))
+                        self.data[feat][key] = torch.cat(listemb, dim=0)
+
+                with open(os.path.join('data', data, feat + 'id'), 'w+') as w:
+                    for emb, _id in key2value.items():
+                        w.write(f'{emb} {_id}\n')
+                        
+
+            elif feat.split('#')[0].endswith('random'):
+                self.data[feat][key] = get_random(feat)
             ## others:
             ##   e.g.  spectrogram#wav.scp, spectrogram#clean_wav.scp -> use conf/spectrogram.yaml to extract data/{data}/wav.scp or data/{data}/clean_wav.scp
             ##         stoi#trial#wav.scp#wav1.scp, pesq#trial#wav.scp#wav1.scp
@@ -137,34 +232,41 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.key_list)
 
     def __getitem__(self, index):
-        x = []
-        y = []
+        x, y = [], []
         key = self.key_list[index]
         for feat in self.feat_list:
-            if self.inferring:
+            if self.stage == 'test':
                 if feat in self.label_list:
                     continue
-            data = self.data[feat][key]
-            if data == None:
-                if self.extract_feature_online:
-                    keys = self.trial_keys[feat][key]
-                    wavs = []
-                    for i, _key in enumerate(keys):
-                        wavfile = self.feat_key_wav_dict[feat][_key][i]
-                        if len(self.wavdict[wavfile]) == 0:
-                            # we load wavfile with librosa.load, which can resmaple the wavform in the same time.
-                            if wavfile.endswith('.wav') or wavfile.endswith('.flac'):
-                                wav, sr = librosa.load(wavfile, sr=self.conf['fs'])
-                                self.wavdict[wavfile] = wav
-                            elif wavfile.endswith('.pt'):
-                                wav = torch.load(wavfile)
-                            # you can add some condition like ".endswtih('.png')" or other extensions here to read it by some file reading method
-                        wavs.append(self.wavdict[wavfile])
-                    self.data[feat][key] = self.extractors[feat](*wavs)
-                else:
-                    self.data[feat][key] = torch.load(os.path.join(self.feature_dir, self.dir, feat, f'{key}.pt')).float()
+            if feat.split('#')[0].endswith('random'):
+                data = self.data[feat][key]()
+            else:
                 data = self.data[feat][key]
-
+                if data == None:
+                    if self.extract_feature_online:
+                        keys = self.trial_keys[feat][key]
+                        wavs = []
+                        for i, _key in enumerate(keys):
+                            wavfile = self.feat_key_wav_dict[feat][_key][i]
+                            if len(self.wavdict[wavfile]) == 0:
+                                # we load wavfile with librosa.load, which can resmaple the wavform in the same time.
+                                if wavfile.endswith('.wav') or wavfile.endswith('.flac'):
+                                    wav, sr = librosa.load(wavfile, sr=self.conf['fs'])
+                                    self.wavdict[wavfile] = wav
+                                elif wavfile.endswith('.pt'):
+                                    wav = torch.load(wavfile)
+                                # you can add some condition like ".endswtih('.png')" or other extensions here to read it by some file reading method
+                            wavs.append(self.wavdict[wavfile])
+                        self.data[feat][key] = self.extractors[feat](*wavs)
+                    else:
+                        feat_dir = feat.split('#')[0]
+                        self.data[feat][key] = torch.load(os.path.join(self.feature_dir, self.dir, feat_dir, f'{key}.pt')).float()
+                    data = self.data[feat][key]
+             
+            if self.stage == 'train':      
+                for aug_method in self.augment[feat]:
+                    data = aug_method(data)
+                    
             if feat in self.label_list:
                 y.append(data)
             else:
@@ -173,46 +275,104 @@ class Dataset(torch.utils.data.Dataset):
 
     def get_dataloader(self):
         return DataLoader(self, batch_size=self.batch_size, shuffle=True,
-                          collate_fn=get_collate_fn(self.collate_fn, self.device),
+                          collate_fn=get_collate_fn(self.collate_fns, self.device, self.feat_list, self.label_list, self.stage),
                          )
 
-
-def get_collate_fn(conf, device):
+def get_collate_fn(conf, device, features, label_list, stage):
+    
+    def aggregate_pad_to_max(batch, i, xyind):
+        x, lenx = [], []
+        for j in range(len(batch)):
+            x.append(batch[j][xyind][i].to(device))
+            lenx.append(batch[j][xyind][i].shape[0])
+        x = pad_sequence(x, batch_first=True)
+        lenx = torch.tensor(lenx)
+        return packed_batch(x, lenx)
+    
+    def aggregate_repetitive_to_max(batch, i, xyind):
+        x, lenx = [], []
+        maxlen = max(batch[j][xyind][i].shape[0] for j in range(len(batch)))
+        for j in range(len(batch)):
+            span = [math.ceil(maxlen/batch[j][xyind][i].shape[0])] + [1] * (batch[j][xyind][i].dim()-1)
+            padding_tensor = batch[j][xyind][i].repeat(*span)[:maxlen]
+            x.append(padding_tensor.to(device).unsqueeze(0))
+            lenx.append(maxlen)
+        x = torch.cat(x, dim=0)
+        lenx = torch.tensor(lenx)
+        return packed_batch(x, lenx)
+        
+    def aggregate_crop_to_min_rand(batch, i, xyind):
+        x, lenx = [], []
+        minlen = min(batch[j][xyind][i].shape[0] for j in range(len(batch)))
+        for j in range(len(batch)):
+            start_index = (torch.rand(1) * (batch[j][xyind][i].shape[0] - minlen + 1)).long()
+            x.append(batch[j][xyind][i][start_index:start_index+minlen].to(device).unsqueeze(0))
+            lenx.append(minlen)
+        x = torch.cat(x, dim=0)
+        lenx = torch.tensor(lenx)
+        return packed_batch(x, lenx)
+    
+    def aggregate_crop_to_min(batch, i, xyind):
+        x, lenx = [], []
+        minlen = min(batch[j][xyind][i].shape[0] for j in range(len(batch)))
+        for j in range(len(batch)):
+            start_index = 0
+            x.append(batch[j][xyind][i][start_index:start_index+minlen].to(device).unsqueeze(0))
+            lenx.append(minlen)
+        x = torch.cat(x, dim=0)
+        lenx = torch.tensor(lenx)
+        return packed_batch(x, lenx)
+    
+    xi, yi = 0, 0
+    fns = []
+    keys = []
+    for feature in features:
+        aggregate_method = conf.get(feature, conf['_default'])
+        if aggregate_method == 'pad_to_max':
+            fn = aggregate_pad_to_max
+        elif aggregate_method == 'repetitive_to_max':
+            fn = aggregate_repetitive_to_max
+        elif aggregate_method == 'crop_to_min':
+            fn = aggregate_crop_to_min
+        elif aggregate_method == 'crop_to_min_rand':
+            fn = aggregate_crop_to_min_rand
+        else:
+            raise Exception(f'not supported aggregate_method: {aggregate_method}')
+        if feature in label_list:
+            if stage == 'test':
+                continue
+            fns.append(functools.partial(fn, i=yi, xyind=1))
+            keys.append(f'_dataset_feat_y{yi}')
+            yi += 1
+        else:
+            fns.append(functools.partial(fn, i=xi, xyind=0))
+            keys.append(f'_dataset_feat_x{xi}')
+            xi += 1
+    
     def collate_fn(batch):
-        """
-        batch: [(x1, y1, id1), (x2, y2, id2), ...], which equals to [((feat1_x1, feat2_x1,...), (feat1_y1, feat2_y1,...), 'id1'), ((feat1_x2, feat2_x2,...), (feat1_y2, feat2_y2,...), 'id2'), ...]
-        output: [[[feat1_x1, feat1_x2,...], [feat2_x1, feat2_x2,...],...], [[feat1_y1, feat1_y1,...], [feat2_y1, feat2_y2,...],...], ['id1', 'id2',...]]
-        """
-        batched_data = {}
-
+        data = {}
         ids = []
-        for i in range(len(batch[0][0])):
-            x, lenx = [], []
-            for _x, _y, _id in batch:
-                x.append(_x[i].to(device))
-                lenx.append(_x[i].shape[0])
-            x = pad_sequence(x, batch_first=True)
-            lenx = torch.tensor(lenx)
-            batched_data[f'_dataset_feat_x{i}'] = packed_batch(x, lenx)
-
-        for i in range(len(batch[0][1])):
-            y, leny = [], []
-            for _x, _y, _id in batch:
-                y.append(_y[i].to(device))
-                leny.append(_y[i].shape[0])
-            y = pad_sequence(y, batch_first=True)
-            leny = torch.tensor(leny)
-            batched_data[f'_dataset_feat_y{i}'] = packed_batch(y, leny)
-
+        for key, fn in zip(keys, fns):
+            data[key] = fn(batch)
         for _x, _y, _id in batch:
             ids.append(_id)
-        batched_data[f'_ids'] = ids
-        return batched_data
+        data['_ids'] = ids
+        return data
+    
     return collate_fn
 
 if __name__ == '__main__':
-    from utils.parse_config import get_train_config
-    args, conf = get_train_config()
-    dataloader = Dataset(args.features, data=args.train, conf=conf['dataset'], extract_feature_online=True).get_dataloader()
-    for x in dataloader:
-        print(x)
+    #from utils.parse_config import get_train_config
+    #args, conf = get_train_config()
+    #dataloader = Dataset(args.features, data=args.train, conf=conf['dataset'], extract_feature_online=True).get_dataloader()
+    #for x in dataloader:
+    #    print(x)
+    for method in ['pad_to_max', 'repetitive_to_max', 'crop_to_min', 'crop_to_min_rand']:
+        print(f'\n\n\n\n{method=}')
+        collate_fn = get_collate_fn({'_default': method, '3': 'pad_to_max'}, 'cpu', ['1', '2', '3'], ['3'], 'train')
+        batch = [ [ [ torch.arange(20000).reshape(100, 200), torch.randn(1)], [torch.arange(13).float()], 'temp1' ], \
+                [ [ torch.arange(18000).reshape(90, 200), torch.randn(1)], [torch.arange(17)], 'temp2' ], \
+                [ [ torch.arange(16000).reshape(80, 200), torch.randn(1)], [torch.arange(17)], 'temp3' ] ]
+        print(collate_fn(batch))
+    
+

@@ -1,0 +1,9 @@
+dataset:
+    features: ['wav#wav.scp']
+    #features: ['spectrogram#wav.scp', 'stoi#trial#wav.scp#trial.scp', 'pesq#trial#wav.scp#trial.scp']
+    label: []
+    fs: 16000
+    collate_fn: 'pad_to_max'
+    batch_size: 1
+
+save_format: ['pt']

@@ -10,3 +10,6 @@ class extractor(baseExtractor):
         return x
     def forward(self,x):
         return torch.tensor(self.extract(x)).reshape(-1)
+
+    def get_output_dim(self):
+        return 1

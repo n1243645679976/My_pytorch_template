@@ -7,6 +7,7 @@ import torch
 import numpy as np
 from collections import defaultdict
 from utils.dynamic_import import dynamic_import
+from dataset import packed_batch
 
 """
 ref: https://stackoverflow.com/questions/44904290/getting-duplicate-keys-in-yaml-using-python
@@ -44,15 +45,16 @@ class Logger():
         self.record = defaultdict(list)
         self.record_size = defaultdict(list)
 
-        self.save = conf.get('save', [])
+        logger_conf = conf['logger']
+        self.save = logger_conf.get('save', [])
         if self.save:
             self.save_dir = os.path.join(self.exp, 'save', self.log_name)
             os.makedirs(self.save_dir, exist_ok=True)
             self.save_record = defaultdict(list)
 
-        self.log_metrics = conf['log_metrics']
-        if conf['log_metrics']:
-            with open(conf['logger_conf']) as f:
+        self.log_metrics = logger_conf['log_metrics']
+        if logger_conf['log_metrics']:
+            with open(logger_conf['logger_conf']) as f:
                 metric_conf_str = f.read()
             _yaml = YAML(typ='safe')
             self.metric_conf = _yaml.load(metric_conf_str) 
@@ -140,6 +142,13 @@ class Logger():
                         for key, value in sorted(data):
                             output = ' '.join(map(str, value.reshape(-1)))
                             w.write(f'{key} {output}\n')
+
+                elif file_name.endswith('.str'):
+                    with open(os.path.join(save_dir, file_name), 'w+') as w:
+                        for key, value in sorted(data):
+                            output = value
+                            w.write(f'{key} {output}\n')
+
                 elif file_name == 'pt':
                     # do things with data
                     for key, value in sorted(data):
@@ -165,17 +174,25 @@ class Logger():
                 outfile.write('iter\t')
                 outfile.write('\t'.join(record_keys))
                 outfile.write('\n')
+                print('iter\t', end='')
+                print('\t'.join(record_keys))
             self.is_first_line_written = True
+        loss = None
         with open(os.path.join(self.exp, self.log_name + '.log'), 'a+') as outfile:
             outfile.write(f'{iter}')
             print(f'{self.log_name}: {iter}', end='')
             for key in record_keys:
-                outfile.write(f'\t{np.sum(self.record[key]) / np.sum(self.record_size[key]):.4f}')
-                print(f'\t{np.sum(self.record[key]) / np.sum(self.record_size[key]):.4f}', end='')
+                met = np.sum(self.record[key]) / np.sum(self.record_size[key])
+                if loss == None:
+                    loss = met
+                outfile.write(f'\t{met:.4f}')
+                print(f'\t{met:.4f}', end='')
             outfile.write('\n')
             print('')
+        
         self.record = defaultdict(list)
         self.record_size = defaultdict(list)
+        return loss
             
     def register_one_record(self, packed_data, size):
         if self.log_metrics:
@@ -189,9 +206,11 @@ class Logger():
                 file_name, key = save_command.split('#')
                 if packed_data[key].len != None:
                     self.save_record[key].extend([(id, each_batch[:_len].detach().cpu().numpy()) for id, each_batch, _len in zip(packed_data['_ids'], packed_data[key].data, packed_data[key].len)])
+                if isinstance(packed_data[key].data, list):
+                    self.save_record[key].extend([(id, each_batch) for id, each_batch in zip(packed_data['_ids'], packed_data[key].data)])
                 else:
                     self.save_record[key].extend([(id, each_batch.detach().cpu().numpy()) for id, each_batch in zip(packed_data['_ids'], packed_data[key].data)])
-
+                    
         loss = packed_data.get('_loss', None)
         if loss != None:
             loss = loss.data

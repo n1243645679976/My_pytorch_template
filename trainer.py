@@ -1,11 +1,10 @@
 import math
 import torch
 from dataset import packed_batch
-from collections import defaultdict
 from utils.model_related import save_model
 from utils.dynamic_import import dynamic_import
 class Trainer():
-    def __init__(self, args, conf, iter_dataloader, dev_dataloader, model, optimizer, iter_logger, dev_logger, iter):
+    def __init__(self, args, conf, iter_dataloader, dev_dataloader, model, optimizer, scheduler, iter_logger, dev_logger, iter):
         print('set trainer')
         self.args = args
         self.conf = conf
@@ -16,6 +15,7 @@ class Trainer():
         self.iter_logger = iter_logger
         self.dev_logger = dev_logger
         self.optimizer = optimizer
+        self.scheduler = scheduler
         self.accum = 0
         self.accum_grad = conf['accum_grad']
         self.iterations = conf['iterations']
@@ -34,13 +34,9 @@ class Trainer():
             self.criterion_inputs[criterion_name] = criterion_conf.get('inputs')
             self.criterion_weight[criterion_name] = float(criterion_conf.get('weight', 1))
         
-        # normalize weight
-        for key in self.criterion_weight:
-            self.criterion_weight[key] /= sum(self.criterion_weight.values())
-    
     def get_loss(self, packed_data):
         if '_loss' not in packed_data:
-            packed_data['_loss'] = packed_batch({'overall_loss':0})
+            packed_data['_loss'] = packed_batch({'overall_loss': None})
         loss = {}
         overall_loss = 0
         for criterion_name in self.criterion.keys():
@@ -50,11 +46,18 @@ class Trainer():
 
             loss[criterion_name] = self.criterion[criterion_name](*inputs)
             overall_loss += self.criterion_weight[criterion_name] * loss[criterion_name]
+
+        if packed_data['_loss'].data['overall_loss'] != None:
             packed_data['_loss'].data['overall_loss'] += overall_loss
+        else:
+            packed_data['_loss'].data['overall_loss'] = overall_loss
+
         return packed_data
 
     def train(self):
-        iter_type_iterations = (self.iteration_type == 'iterations')
+        print(f'start training from {self.iters} to {self.iterations} ', end='')
+        print('iteration(s)' if 'iteration' in self.iteration_type else 'epoch(s)')
+        iter_type_iterations = ('iteration' in self.iteration_type)
         while self.iters < self.iterations:
             for packed_data in self.iter_dataloader:
                 packed_data = self.iter_forward(packed_data)
@@ -77,6 +80,7 @@ class Trainer():
 
             self.dev_logger.register_one_record(packed_data, len(packed_data['_ids']))
         self.dev_logger.log_and_clear_record(self.iters)
+        print(f'change learning rate to {self.scheduler.optimizer.param_groups[0]["lr"]}')
 
     def test(self, iter):
         with torch.no_grad():
@@ -96,6 +100,7 @@ class Trainer():
                 print("grad norm in inf. Do not update model.")
             else:
                 self.optimizer.step()
+                self.scheduler.step()
             self.optimizer.zero_grad()
             self.accum = 0
 

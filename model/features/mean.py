@@ -9,4 +9,6 @@ class extractor(baseExtractor):
         return np.mean(x)
     def forward(self, x):
         return torch.mean(x.float())
+    def get_output_dim(self):
+        return 1
 

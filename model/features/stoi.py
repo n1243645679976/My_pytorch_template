@@ -22,3 +22,6 @@ class extractor(baseExtractor):
         return stoi_score
     def forward(self,x, y):
         return torch.tensor(self.extract(x, y)).reshape(1)
+    def get_output_dim(self):
+        return 1
+

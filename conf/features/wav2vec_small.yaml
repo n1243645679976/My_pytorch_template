@@ -1,0 +1,3 @@
+feature: wav2vec
+cp_path: pretrained_model/wav2vec_small.pt
+device: cuda

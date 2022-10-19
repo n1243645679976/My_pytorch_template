@@ -8,6 +8,7 @@ from .base import baseExtractor
 class extractor(baseExtractor):
     def __init__(self, conf):
         super(extractor, self).__init__(conf)
+        self.outdim = self.conf['n_mels']
     def get_inputs_nums(self):
         return 1
     def get_feature_name(self):
@@ -27,4 +28,6 @@ class extractor(baseExtractor):
         return lmspc.astype(np.float32)
     def forward(self, x):
         return torch.tensor(self.extract(x))
+    def get_output_dim(self):
+        return self.outdim
             

@@ -19,9 +19,9 @@ if __name__ == '__main__':
     model = get_model(conf=conf,
                       resume=load_model['model'],
                       device=args.device)
-    test_dataloader = Dataset(feature_dir=args.features, data=args.test, conf=conf['dataset'], extract_feature_online=args.extract_feature_online, device=args.device).get_dataloader()
+    test_dataloader = Dataset(feature_dir=args.features, data=args.test, train_data=args.train, stage='test', conf=conf['dataset'], extract_feature_online=args.extract_feature_online, device=args.device).get_dataloader()
     optimizer = get_optimizer(model, conf=conf['optimizer'], load_optimizer=load_model['optimizer'])
-    test_logger = Logger(exp=args.exp, args=args, conf=conf['logger'], log_name=args.test)
+    test_logger = Logger(exp=args.exp, args=args, conf=conf, log_name=args.test)
 
     trainer = Trainer(args=args,
                       conf=conf['trainer'],
@@ -29,6 +29,7 @@ if __name__ == '__main__':
                       dev_dataloader=None,
                       model=model,
                       optimizer=optimizer,
+                      scheduler=None,
                       iter_logger=test_logger,
                       dev_logger=None,
                       iter=load_model['iters'])
@@ -38,7 +39,7 @@ if __name__ == '__main__':
         trainer.model = model
         if it >= int(args.start) and it <= int(args.end):
             print(f'load {checkpoint}')
-            load_model = torch.load(checkpoint)
+            load_model = torch.load(checkpoint, map_location=args.device)
             model = get_model(conf=conf,
                               resume=load_model['model'],
                               device=args.device)

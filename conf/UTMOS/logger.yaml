@@ -1,0 +1,14 @@
+acc:
+  all.acc:
+     - pred_pref_utt_score
+     - gt_pref_score
+
+utt_srcc:
+  all.srcc:
+    - pred_pref_utt_score
+    - gt_pref_score
+    
+sys_srcc:
+  mos_sys20.srcc:
+    - pred_pref_utt_score
+    - gt_pref_score

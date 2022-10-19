@@ -10,3 +10,5 @@ class extractor(baseExtractor):
         return x
     def forward(self,x):
         return x
+    def get_output_dim(self):
+        raise NotImplemented

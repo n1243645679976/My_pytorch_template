@@ -7,6 +7,7 @@ class extractor(baseExtractor):
     def __init__(self, conf):
         super(extractor, self).__init__(conf)
         self.window = scipy.signal.windows.hamming
+        self.outdim = (1 + self.conf['fft_size']) // 2
     def get_inputs_nums(self):
         return 1
     def get_feature_name(self):
@@ -22,3 +23,5 @@ class extractor(baseExtractor):
         return linear.astype(np.float32)
     def forward(self, x):
         return torch.tensor(self.extract(x))
+    def get_output_dim(self):
+        return self.outdim

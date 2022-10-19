@@ -10,4 +10,6 @@ class extractor(baseExtractor):
         return mse(x, y)
     def forward(self, x, y):
         return torch.tensor(self.extract(x, y))
+    def get_output_dim(self):
+        return 1
 

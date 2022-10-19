@@ -1,0 +1,105 @@
+model: 
+    modules:
+        modules_0:
+            model_class: model.features.wav2vec:featureExtractor
+            save: True
+            freeze: False
+            inputs: ['_dataset_feat_x0']
+            arch:
+                conf:
+                    cp_path: pretrained_model/wav2vec_small.pt
+                    device: cpu
+            output: ['wav2vec']
+
+        modules_1:
+            model_class: model.UTMOS.model:Model
+            save: True
+            freeze: False
+            inputs: ['wav2vec', '_dataset_feat_x1', '_dataset_feat_x2', '_dataset_feat_x3', '_dataset_feat_x4']
+            arch: 
+                conf: 
+                    hidden_dim: 256
+                    emb_dim: 256
+                    out_dim: 256
+                    n_lstm_layers: 3
+                    vocab_size: 2048
+                    n_domains: 5
+                    domain_dim: 128
+
+                    judge_dim: 128
+                    num_judges: 3500
+                    projection_hidden_dim: 2048
+                    range_clipping: False
+                    pref_mode: score
+
+            output: ['pred_score', 'pred_utt_score']
+
+dataset:
+    features: ['wav#wav.scp', 'text.listchar', 'ref.listchar', 'domain.emb', 'judge_id.emb', 'score_norm.txt']
+    label: []
+    fs: 16000
+    
+    collate_fns: 
+        _default: 'repetitive_to_max'
+        text.listchar: 'pad_to_max'
+        ref.listchar: 'pad_to_max'
+
+    batch_size:
+        _default: 12
+        dev: 1
+        test: 1
+
+    data_augmentation:
+        wav#wav.scp:
+            -
+                augment: model.augment.AugmentWav:AugmentWav
+                conf:
+                    pitch_shift_minmax:
+                        min: -300
+                        max: 300
+                    random_time_warp_f: 1.0
+                aug_when_inferring: False
+            -
+                augment: model.augment.SliceWav:SliceWav
+                conf:
+                    max_wav_seconds: 10
+                aug_when_inferring: False
+
+
+# multiple_optimizer
+optimizer:
+    type: torch.optim:Adam
+    conf:
+        lr: 0.00002
+
+scheduler:
+    type: transformers:get_linear_schedule_with_warmup
+    conf: 
+        num_warmup_steps: 8000
+        num_training_steps: 30000
+
+trainer:
+    iteration_type: 'iteration'
+    iterations: 60000
+    save_per_iterations: 5000
+    eval_per_iterations: 5000
+    accum_grad: 2
+    loss:
+        ClippedMSELoss:
+            criterion_class: model.nn.losses:ClippedMSELoss
+            conf:
+                tau: 0.25
+                mode: 'frame'
+            inputs: ['pred_score', '_dataset_feat_x5']
+            weight: 1
+        ContrastiveLoss:
+            criterion_class: model.nn.losses:ContrastiveLoss
+            conf:
+                margin: 0.1
+            inputs: ['pred_utt_score', '_dataset_feat_x5']
+            weight: 0.5
+
+logger:
+    log_metrics: True
+    logger_conf: conf/UTMOS/logger_score.yaml
+    save: ['pred_utt_score.txt#pred_utt_score', 'gt_score.txt#_dataset_feat_x5']

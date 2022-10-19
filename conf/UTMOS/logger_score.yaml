@@ -1,0 +1,11 @@
+utt_srcc:
+  all.srcc:
+    - pred_utt_score
+    - _dataset_feat_x5
+    
+sys_srcc:
+  all.srcc:
+    mos_sys20.mean:
+      - pred_utt_score
+    mos_sys20.mean:
+      - _dataset_feat_x5
