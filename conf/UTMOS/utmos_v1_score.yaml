@@ -7,8 +7,8 @@ model:
             inputs: ['_dataset_feat_x0']
             arch:
                 conf:
-                    cp_path: pretrained_model/wav2vec_small.pt
-                    device: cpu
+                    cp_path: pretrained_models/wav2vec_small.pt
+                    device: cuda
             output: ['wav2vec']
 
         modules_1:
@@ -38,14 +38,17 @@ dataset:
     features: ['wav#wav.scp', 'text.listchar', 'ref.listchar', 'domain.emb', 'judge_id.emb', 'score_norm.txt']
     label: []
     fs: 16000
-    
+    pairing:
+        additional_data: 1
+        limits: 'same:judge_id.emb'
+
     collate_fns: 
         _default: 'repetitive_to_max'
         text.listchar: 'pad_to_max'
         ref.listchar: 'pad_to_max'
 
     batch_size:
-        _default: 12
+        _default: 3
         dev: 1
         test: 1
 
@@ -75,15 +78,15 @@ optimizer:
 scheduler:
     type: transformers:get_linear_schedule_with_warmup
     conf: 
-        num_warmup_steps: 8000
-        num_training_steps: 30000
+        num_warmup_steps: 4000
+        num_training_steps: 15000
 
 trainer:
     iteration_type: 'iteration'
     iterations: 60000
     save_per_iterations: 5000
     eval_per_iterations: 5000
-    accum_grad: 2
+    accum_grad: 4
     loss:
         ClippedMSELoss:
             criterion_class: model.nn.losses:ClippedMSELoss

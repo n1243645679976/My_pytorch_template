@@ -4,6 +4,7 @@ import torch
 import librosa
 import importlib
 import shutil
+import random
 from collections import defaultdict
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
@@ -11,6 +12,7 @@ from utils.get_rand import get_random
 from utils.dynamic_import import dynamic_import
 import math
 import functools
+import itertools
 
 class packed_batch():
     def __init__(self, data, data_len=None):
@@ -46,6 +48,8 @@ class Dataset(torch.utils.data.Dataset):
 
         self.dir = data
         self.data = {}
+        self.taken_item = conf.get('pairing', {'additional_data': 0})['additional_data'] + 1
+        
         self.collate_fns = conf['collate_fns'] # for get_dataloader use
         self.batch_size = conf['batch_size'].get(stage, conf['batch_size']['_default']) # for get_dataloader use
         self.augment = defaultdict(list)
@@ -228,10 +232,43 @@ class Dataset(torch.utils.data.Dataset):
 
                 self.data[feat] = defaultdict(lambda : None)
                 
+        if self.taken_item > 1:
+            self.limits = conf['pairing']['limits'].split(',')
+            self.choose_list = {}
+            for i, key in enumerate(self.key_list):
+                node = self.get_limit_node(key)
+                if 'data' not in node:
+                    node['data'] = []
+                node['data'].append(i)
+
     def __len__(self):
         return len(self.key_list)
 
+    def get_limit_node(self, key):
+        node = self.choose_list
+        for limit in self.limits:
+            # TODO: maybe we can support different latter but it may be difficult
+            if limit.startswith('same:'):
+                limit = limit[5:]
+                data = self.data[limit][key]
+                data = tuple(float(d) for d in data) # one dimension
+                if data not in node:
+                    node[data] = {}
+                node = node[data]
+            else:
+                raise Exception(f'unknow limit: {limit}')
+        return node
+    
     def __getitem__(self, index):
+        ret = [self.getitem(index)]
+        if self.taken_item > 1:
+            for i in range(self.taken_item - 1):
+                node = self.get_limit_node(self.key_list[index])
+                chooseind = random.choice(node['data'])
+                ret.append(self.getitem(chooseind))
+        return ret
+    
+    def getitem(self, index):
         x, y = [], []
         key = self.key_list[index]
         for feat in self.feat_list:
@@ -282,19 +319,19 @@ def get_collate_fn(conf, device, features, label_list, stage):
     
     def aggregate_pad_to_max(batch, i, xyind):
         x, lenx = [], []
-        for j in range(len(batch)):
-            x.append(batch[j][xyind][i].to(device))
-            lenx.append(batch[j][xyind][i].shape[0])
+        for data in itertools.chain.from_iterable(batch):
+            x.append(data[xyind][i].to(device))
+            lenx.append(data[xyind][i].shape[0])
         x = pad_sequence(x, batch_first=True)
         lenx = torch.tensor(lenx)
         return packed_batch(x, lenx)
     
     def aggregate_repetitive_to_max(batch, i, xyind):
         x, lenx = [], []
-        maxlen = max(batch[j][xyind][i].shape[0] for j in range(len(batch)))
-        for j in range(len(batch)):
-            span = [math.ceil(maxlen/batch[j][xyind][i].shape[0])] + [1] * (batch[j][xyind][i].dim()-1)
-            padding_tensor = batch[j][xyind][i].repeat(*span)[:maxlen]
+        maxlen = max(data[xyind][i].shape[0] for data in itertools.chain.from_iterable(batch))
+        for data in itertools.chain.from_iterable(batch):
+            span = [math.ceil(maxlen/data[xyind][i].shape[0])] + [1] * (data[xyind][i].dim()-1)
+            padding_tensor = data[xyind][i].repeat(*span)[:maxlen]
             x.append(padding_tensor.to(device).unsqueeze(0))
             lenx.append(maxlen)
         x = torch.cat(x, dim=0)
@@ -303,10 +340,10 @@ def get_collate_fn(conf, device, features, label_list, stage):
         
     def aggregate_crop_to_min_rand(batch, i, xyind):
         x, lenx = [], []
-        minlen = min(batch[j][xyind][i].shape[0] for j in range(len(batch)))
-        for j in range(len(batch)):
-            start_index = (torch.rand(1) * (batch[j][xyind][i].shape[0] - minlen + 1)).long()
-            x.append(batch[j][xyind][i][start_index:start_index+minlen].to(device).unsqueeze(0))
+        minlen = min(data[xyind][i].shape[0] for data in itertools.chain.from_iterable(batch))
+        for data in itertools.chain.from_iterable(batch):
+            start_index = (torch.rand(1) * (data[xyind][i].shape[0] - minlen + 1)).long()
+            x.append(data[xyind][i][start_index:start_index+minlen].to(device).unsqueeze(0))
             lenx.append(minlen)
         x = torch.cat(x, dim=0)
         lenx = torch.tensor(lenx)
@@ -314,10 +351,10 @@ def get_collate_fn(conf, device, features, label_list, stage):
     
     def aggregate_crop_to_min(batch, i, xyind):
         x, lenx = [], []
-        minlen = min(batch[j][xyind][i].shape[0] for j in range(len(batch)))
-        for j in range(len(batch)):
+        minlen = min(data[xyind][i].shape[0] for data in itertools.chain.from_iterable(batch))
+        for data in itertools.chain.from_iterable(batch):
             start_index = 0
-            x.append(batch[j][xyind][i][start_index:start_index+minlen].to(device).unsqueeze(0))
+            x.append(data[xyind][i][start_index:start_index+minlen].to(device).unsqueeze(0))
             lenx.append(minlen)
         x = torch.cat(x, dim=0)
         lenx = torch.tensor(lenx)
@@ -354,7 +391,7 @@ def get_collate_fn(conf, device, features, label_list, stage):
         ids = []
         for key, fn in zip(keys, fns):
             data[key] = fn(batch)
-        for _x, _y, _id in batch:
+        for _x, _y, _id in itertools.chain.from_iterable(batch):
             ids.append(_id)
         data['_ids'] = ids
         return data

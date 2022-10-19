@@ -245,7 +245,6 @@ class Model(torch.nn.Module):
             scores = x[6].data
         except IndexError as e:
             pass
-
         phoneme_feature = self.phoneme_model(seq, lens, reference_seq, reference_len)
         domain_feature = self.domain_model(domain)
         ld_feature = self.ldconditioner(ssl_feature, domain_feature, phoneme_feature, judge_id)
