@@ -36,9 +36,6 @@ model:
 
 dataset:
     features: ['wav#wav.scp', 'text.listchar', 'ref.listchar', 'domain.emb', 'judge_id.emb', 'score_norm.txt']
-    pairing:
-        additional_data: 1
-        limits: 'same:judge_id.emb'
     label: []
     fs: 16000
     
@@ -84,8 +81,8 @@ scheduler:
 trainer:
     iteration_type: 'iteration'
     iterations: 60000
-    save_per_iterations: 20000
-    eval_per_iterations: 20000
+    save_per_iterations: 5000
+    eval_per_iterations: 5000
     accum_grad: 4
     loss:
         ClippedMSELoss:
@@ -94,6 +91,6 @@ trainer:
             weight: 1
 
 logger:
-    log_metrics: True
+    log_metrics: False
     logger_conf: conf/UTMOS/logger_score_pref.yaml
     save: ['pred_utt_score.txt#utt_pref_score', 'gt_score.txt#gt_pref_score']

@@ -30,7 +30,7 @@ model:
                     num_judges: 3500
                     projection_hidden_dim: 2048
                     range_clipping: False
-                    pref_mode: pref
+                    pref_mode: pref1
 
             output: ['frame_class_score', 'gt_pref_score', 'utt_pref_score', 'utt_class_score', '_ids']
 
@@ -55,18 +55,11 @@ dataset:
     data_augmentation:
         wav#wav.scp:
             -
-                augment: model.augment.AugmentWav:AugmentWav
-                conf:
-                    pitch_shift_minmax:
-                        min: -300
-                        max: 300
-                    random_time_warp_f: 1.0
-                aug_when_inferring: False
-            -
                 augment: model.augment.SliceWav:SliceWav
                 conf:
                     max_wav_seconds: 10
                 aug_when_inferring: False
+
 
 
 # multiple_optimizer
@@ -79,11 +72,11 @@ scheduler:
     type: transformers:get_linear_schedule_with_warmup
     conf: 
         num_warmup_steps: 4000
-        num_training_steps: 15000
+        num_training_steps: 75000
 
 trainer:
     iteration_type: 'iteration'
-    iterations: 60000
+    iterations: 240000
     save_per_iterations: 20000
     eval_per_iterations: 20000
     accum_grad: 4

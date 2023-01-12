@@ -65,7 +65,11 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
     fi
 fi
 
+if [ -z $id_dir ]; then
+    id_dir=$expdir
+fi
+
 if [ $stage -le 3 ] && [ $stop_stage -ge 3 ]; then
     echo "stage 3: testing mosnet"
-    python test.py --test $test --conf $train_conf --exp $expdir --start $start_testing --end $end_testing --features $features --device cuda --extract_feature_online $extract_feature_online
+    python test.py --test $test --id_dir $id_dir --conf $train_conf --exp $expdir --start $start_testing --end $end_testing --features $features --device cuda --extract_feature_online $extract_feature_online
 fi

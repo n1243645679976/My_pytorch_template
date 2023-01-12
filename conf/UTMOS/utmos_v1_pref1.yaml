@@ -30,7 +30,7 @@ model:
                     num_judges: 3500
                     projection_hidden_dim: 2048
                     range_clipping: False
-                    pref_mode: pref
+                    pref_mode: pref1
 
             output: ['frame_class_score', 'gt_pref_score', 'utt_pref_score', 'utt_class_score', '_ids']
 

@@ -23,8 +23,8 @@ if __name__ == '__main__':
     model = get_model(conf=conf,
                       resume=load_model['model'],
                       device=args.device)
-    train_dataloader = Dataset(feature_dir=args.features, data=args.train, conf=conf['dataset'], extract_feature_online=args.extract_feature_online, device=args.device, stage='train').get_dataloader()
-    dev_dataloader = Dataset(feature_dir=args.features, data=args.dev, train_data=args.train, conf=conf['dataset'], extract_feature_online=args.extract_feature_online, device=args.device, stage='dev').get_dataloader()
+    train_dataloader = Dataset(feature_dir=args.features, exp=args.exp, data=args.train, conf=conf['dataset'], extract_feature_online=args.extract_feature_online, device=args.device, stage='train').get_dataloader()
+    dev_dataloader = Dataset(feature_dir=args.features, exp=args.exp, data=args.dev, conf=conf['dataset'], extract_feature_online=args.extract_feature_online, device=args.device, stage='dev').get_dataloader()
     optimizer = get_optimizer(model, conf=conf.get('optimizer', {}), load_optimizer=load_model['optimizer'])
     scheduler = get_scheduler(optimizer, conf.get('scheduler', {}))
     iter_logger = Logger(exp=args.exp, args=args, conf=conf, log_name='train')

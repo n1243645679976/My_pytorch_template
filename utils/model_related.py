@@ -61,7 +61,6 @@ class model(torch.nn.Module):
                 outputs = self.moduledict[module_key](inputs)
             
             for output_name, module_output in zip(self.module_outputs[module_key], outputs):
-                assert output_name not in packed_data
                 if isinstance(module_output, packed_batch):
                     packed_data[output_name] = module_output
                 else:
@@ -90,7 +89,6 @@ class model(torch.nn.Module):
         
 
 def get_model(conf, resume, device):
-    print(model)
     _model = model(conf)
     _model.load_model(resume)
     _model = _model.to(device)

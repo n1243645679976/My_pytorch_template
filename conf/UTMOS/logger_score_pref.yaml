@@ -1,0 +1,11 @@
+utt_srcc:
+  all.srcc:
+    - gt_pref_score
+    - utt_pref_score
+    
+sys_srcc:
+  all.srcc:
+    mos_sys20.mean:
+      - gt_pref_score
+    mos_sys20.mean:
+      - utt_pref_score

@@ -55,18 +55,11 @@ dataset:
     data_augmentation:
         wav#wav.scp:
             -
-                augment: model.augment.AugmentWav:AugmentWav
-                conf:
-                    pitch_shift_minmax:
-                        min: -300
-                        max: 300
-                    random_time_warp_f: 1.0
-                aug_when_inferring: False
-            -
                 augment: model.augment.SliceWav:SliceWav
                 conf:
                     max_wav_seconds: 10
                 aug_when_inferring: False
+
 
 
 # multiple_optimizer

@@ -13,6 +13,7 @@ from utils.dynamic_import import dynamic_import
 import math
 import functools
 import itertools
+import copy
 
 class packed_batch():
     def __init__(self, data, data_len=None):
@@ -20,10 +21,10 @@ class packed_batch():
         self.len = data_len
     def __repr__(self):
         return f'{self.data=}, {self.len=}'
-        return f'data shape: {self.data.shape}, length of data: {self.len}'
 
-class Dataset(torch.utils.data.Dataset):
-    def __init__(self, feature_dir, data, conf, stage, train_data=None, extract_feature_online=False, device='cpu'):
+    
+class singleDataset(torch.utils.data.Dataset):
+    def __init__(self, feature_dir, exp, data, conf, stage, id_dir=None, extract_feature_online=False, device='cpu'):
         """
         conf['feature']: [feature_1, feature_2, ..., feature_n] (e.g. ['spectrogram', 'hubert', 'score.txt'])
         conf['label']:   [feature_1, feature_2] (e.g. ['score.txt'])
@@ -35,14 +36,15 @@ class Dataset(torch.utils.data.Dataset):
 
         we open data/{data}/wav.scp as filelist, and read feature from exp/{data}/{feat}/*.pt
         """
-        print(f'read dataset {data}')
+        shutil.copytree(f'data/{data}', f'{exp}/data/{data}', dirs_exist_ok=True)
         self.conf = conf
         self.key_list = [] # for iter in __getitem__
         self.feat_list = conf['features'] # for iter in __getitem__
         self.stage = stage
         self.label_list = conf.get('label', []) # for exclude in __getitem__
         self.extract_feature_online = (extract_feature_online.lower() == 'true')     # for iter in __getitem__
-
+        self.data_cache = conf.get('data_cache', True)
+        print('data_cache', self.data_cache)
         self.feature_dir = feature_dir
         self.extractors = {}
 
@@ -55,7 +57,7 @@ class Dataset(torch.utils.data.Dataset):
         self.augment = defaultdict(list)
         self.feat_key_wav_dict = defaultdict(lambda : defaultdict(lambda : defaultdict(None)))
         self.trial_keys = defaultdict(lambda : defaultdict(None))
-        self.wavdict = defaultdict(list)
+        self.wavdict = {}
         self.device = device
 
         for aug_feature, aug_confs in conf.get('data_augmentation', {}).items():
@@ -65,14 +67,23 @@ class Dataset(torch.utils.data.Dataset):
                 self.augment[aug_feature].append(aug_method)
 
         # use 'files_id' or 'wav.scp' to retrieve file key for iteration
-        if os.path.isfile(os.path.join('data', data, 'files_id')):
-            files_id_list = os.path.join('data', data, 'files_id')
+        if os.path.isfile(os.path.join('data', data, 'trials')):
+            files_id_list = os.path.join('data', data, 'trials')
+            self.id_list_type_is_trials = True
+        elif os.path.isfile(os.path.join('data', data, 'datasetids')):
+            files_id_list = os.path.join('data', data, 'datasetids')
+            self.id_list_type_is_trials = False
         else:
             files_id_list = os.path.join('data', data, 'wav.scp')
+            self.id_list_type_is_trials = False
+            
         with open(files_id_list) as f:
             for line in f.read().splitlines():
-                 self.key_list.append(line.split()[0])
-
+                if self.id_list_type_is_trials:
+                    self.key_list.append(tuple(line.split()))
+                else:
+                    self.key_list.append(tuple(line.split()[:1]))
+                
         for feat in conf['features']:
             ## txt: {id} {float}
             if feat.endswith('.txt'):
@@ -82,16 +93,25 @@ class Dataset(torch.utils.data.Dataset):
                         key, value = line.split()
                         self.data[feat][key] = torch.tensor(float(value)).reshape(1)
 
+            ## str: {id} {string}
+            elif feat.endswith('.str'):
+                with open(os.path.join('data', data, feat)) as f:
+                    self.data[feat] = {}
+                    for line in f.read().splitlines():
+                        key, value = line.split(' ', maxsplit=1)
+                        self.data[feat][key] = value
+
             ## emb: {id} {some identifier}
             ##   diction write in to .embid
             elif feat.endswith('.emb'):
                 id = 0
                 key2value = {}
-                if train_data:
-                    shutil.copy(os.path.join('data', train_data, feat + 'id'), os.path.join('data', data, feat + 'id'))
+                if id_dir:
+                    if id_dir != exp:
+                        shutil.copy(os.path.join(id_dir, 'data_ids', feat + 'id'), os.path.join(exp, 'data_ids', feat + 'id'))
 
-                if os.path.isfile(os.path.join('data', data, feat + 'id')):
-                    with open(os.path.join('data', data, feat + 'id')) as f:
+                if os.path.isfile(os.path.join(exp, 'data_ids', feat + 'id')):
+                    with open(os.path.join(exp, 'data_ids', feat + 'id')) as f:
                         for line in sorted(f.read().splitlines()):
                             emb, _id = line.split()
                             _id = int(_id)
@@ -107,7 +127,7 @@ class Dataset(torch.utils.data.Dataset):
                             id += 1
                         self.data[feat][key] = torch.tensor(key2value[emb]).long().reshape(1)
 
-                with open(os.path.join('data', data, feat + 'id'), 'w+') as w:
+                with open(os.path.join(exp, 'data_ids', feat + 'id'), 'w+') as w:
                     for emb, _id in key2value.items():
                         w.write(f'{emb} {_id}\n')
             
@@ -129,11 +149,12 @@ class Dataset(torch.utils.data.Dataset):
             elif feat.endswith('.listemb'):
                 id = 1 # start from 1 to avoid pad by 0
                 key2value = {}
-                if train_data:
-                    shutil.copy(os.path.join('data', train_data, feat + 'id'), os.path.join('data', data, feat + 'id'))
+                if id_dir:
+                    if id_dir != exp:
+                        shutil.copy(os.path.join(id_dir, 'data_ids', feat + 'id'), os.path.join(exp, 'data_ids', feat + 'id'))
 
-                if os.path.isfile(os.path.join('data', data, feat + 'id')):
-                    with open(os.path.join('data', data, feat + 'id')) as f:
+                if os.path.isfile(os.path.join(exp, 'data_ids', feat + 'id')):
+                    with open(os.path.join(exp, 'data_ids', feat + 'id')) as f:
                         for line in sorted(f.read().splitlines()):
                             emb, _id = line.split()
                             _id = int(_id)
@@ -152,7 +173,7 @@ class Dataset(torch.utils.data.Dataset):
                             listemb.append(torch.tensor(key2value[emb]).long().reshape(1))
                         self.data[feat][key] = torch.cat(listemb, dim=0)
 
-                with open(os.path.join('data', data, feat + 'id'), 'w+') as w:
+                with open(os.path.join(exp, 'data_ids', feat + 'id'), 'w+') as w:
                     for emb, _id in key2value.items():
                         w.write(f'{emb} {_id}\n')
             
@@ -165,11 +186,12 @@ class Dataset(torch.utils.data.Dataset):
             elif feat.endswith('.listchar'):
                 id = 1 # start from 1 to avoid pad by 0
                 key2value = {}
-                if train_data:
-                    shutil.copy(os.path.join('data', train_data, feat + 'id'), os.path.join('data', data, feat + 'id'))
+                if id_dir:
+                    if id_dir != exp:
+                        shutil.copy(os.path.join(id_dir, 'data_ids', feat + 'id'), os.path.join(exp, 'data_ids', feat + 'id'))
 
-                if os.path.isfile(os.path.join('data', data, feat + 'id')):
-                    with open(os.path.join('data', data, feat + 'id')) as f:
+                if os.path.isfile(os.path.join(exp, 'data_ids', feat + 'id')):
+                    with open(os.path.join(exp, 'data_ids', feat + 'id')) as f:
                         for line in sorted(f.read().splitlines()):
                             emb, _id = line[0], line[2:]
                             _id = int(_id)
@@ -188,7 +210,7 @@ class Dataset(torch.utils.data.Dataset):
                             listemb.append(torch.tensor(key2value[emb]).long().reshape(1))
                         self.data[feat][key] = torch.cat(listemb, dim=0)
 
-                with open(os.path.join('data', data, feat + 'id'), 'w+') as w:
+                with open(os.path.join(exp, 'data_ids', feat + 'id'), 'w+') as w:
                     for emb, _id in key2value.items():
                         w.write(f'{emb} {_id}\n')
                         
@@ -199,7 +221,7 @@ class Dataset(torch.utils.data.Dataset):
             ##   e.g.  spectrogram#wav.scp, spectrogram#clean_wav.scp -> use conf/spectrogram.yaml to extract data/{data}/wav.scp or data/{data}/clean_wav.scp
             ##         stoi#trial#wav.scp#wav1.scp, pesq#trial#wav.scp#wav1.scp
             ##   only the shape of dimension 0 can be variable
-            else:
+            elif feat.endswith('wav.scp'):
                 if self.extract_feature_online:
                     feat_conf_file = feat.split('#')[0]
                     with open(f'conf/features/{feat_conf_file}.yaml') as f:
@@ -229,17 +251,26 @@ class Dataset(torch.utils.data.Dataset):
                             for line in f.read().splitlines():
                                 key, value = line.split(' ', maxsplit=1)
                                 self.trial_keys[feat][key] = value.split()
-
                 self.data[feat] = defaultdict(lambda : None)
+            else:
+                raise Exception(f"Unsupported input {feat}")
                 
         if self.taken_item > 1:
+            assert not self.id_list_type_is_trials
             self.limits = conf['pairing']['limits'].split(',')
             self.choose_list = {}
-            for i, key in enumerate(self.key_list):
-                node = self.get_limit_node(key)
-                if 'data' not in node:
-                    node['data'] = []
-                node['data'].append(i)
+            for i, keys in enumerate(self.key_list):
+                for key in keys:
+                    node = self.get_limit_node(key)
+                    if 'data' not in node:
+                        node['data'] = []
+                    node['data'].append(i)
+#        assert len(self.key_list) == len(set(self.key_list)) # check unique key
+        print(f'{self.stage} {data} dataset size: {len(self.key_list)} ', end='')
+        if self.id_list_type_is_trials:
+            print('trials')
+        else:
+            print('')
 
     def __len__(self):
         return len(self.key_list)
@@ -247,7 +278,7 @@ class Dataset(torch.utils.data.Dataset):
     def get_limit_node(self, key):
         node = self.choose_list
         for limit in self.limits:
-            # TODO: maybe we can support different latter but it may be difficult
+            # TODO: support different, refer to https://leetcode.com/problems/random-pick-with-blacklist/
             if limit.startswith('same:'):
                 limit = limit[5:]
                 data = self.data[limit][key]
@@ -260,17 +291,18 @@ class Dataset(torch.utils.data.Dataset):
         return node
     
     def __getitem__(self, index):
-        ret = [self.getitem(index)]
-        if self.taken_item > 1:
-            for i in range(self.taken_item - 1):
-                node = self.get_limit_node(self.key_list[index])
-                chooseind = random.choice(node['data'])
-                ret.append(self.getitem(chooseind))
+        ret = []
+        for key in self.key_list[index]:
+            ret.append(self.getitem(key=key))
+            if self.taken_item > 1: # avoid using trials 
+                for _ in range(self.taken_item - 1):
+                    node = self.get_limit_node(key)
+                    chooseind = random.choice(node['data'])
+                    ret.append(self.getitem(key=self.key_list[chooseind][0]))
         return ret
     
-    def getitem(self, index):
+    def getitem(self, key=None):
         x, y = [], []
-        key = self.key_list[index]
         for feat in self.feat_list:
             if self.stage == 'test':
                 if feat in self.label_list:
@@ -285,20 +317,26 @@ class Dataset(torch.utils.data.Dataset):
                         wavs = []
                         for i, _key in enumerate(keys):
                             wavfile = self.feat_key_wav_dict[feat][_key][i]
-                            if len(self.wavdict[wavfile]) == 0:
+                            if wavfile not in self.wavdict:
                                 # we load wavfile with librosa.load, which can resmaple the wavform in the same time.
                                 if wavfile.endswith('.wav') or wavfile.endswith('.flac'):
                                     wav, sr = librosa.load(wavfile, sr=self.conf['fs'])
-                                    self.wavdict[wavfile] = wav
+                                    if self.data_cache:
+                                        self.wavdict[wavfile] = wav
                                 elif wavfile.endswith('.pt'):
                                     wav = torch.load(wavfile)
                                 # you can add some condition like ".endswtih('.png')" or other extensions here to read it by some file reading method
-                            wavs.append(self.wavdict[wavfile])
-                        self.data[feat][key] = self.extractors[feat](*wavs)
+                            else:
+                                wav = self.wavdict[wavfile]
+                            wavs.append(wav)
+                        data = self.extractors[feat](*wavs)
+                        if self.data_cache:
+                            self.data[feat][key] = data
                     else:
                         feat_dir = feat.split('#')[0]
-                        self.data[feat][key] = torch.load(os.path.join(self.feature_dir, self.dir, feat_dir, f'{key}.pt')).float()
-                    data = self.data[feat][key]
+                        data = torch.load(os.path.join(self.feature_dir, self.dir, feat_dir, f'{key}.pt')).float()
+                        if self.data_cache:
+                            self.data[feat][key] = data
              
             if self.stage == 'train':      
                 for aug_method in self.augment[feat]:
@@ -315,11 +353,51 @@ class Dataset(torch.utils.data.Dataset):
                           collate_fn=get_collate_fn(self.collate_fns, self.device, self.feat_list, self.label_list, self.stage),
                          )
 
-def get_collate_fn(conf, device, features, label_list, stage):
+class Dataset(torch.utils.data.Dataset):
+    def __init__(self, **conf):
+        dataloaders = []
+        copyconf = copy.deepcopy(conf)
+        self.weights = []
+        for d in conf['data'].split(','):
+            if '*' in d:
+                d, weight = d.split('*')
+                assert '.' not in weight
+                weight = int(weight)
+            else:
+                weight = 1
+            copyconf['data'] = d
+            dataloaders.append(singleDataset(**copyconf).get_dataloader())
+            self.weights.append(weight)
+        self.dataloaders = dataloaders
+        self.lens = list(map(len, dataloaders))
+        maxlen = max(self.lens)
+        self.dataloader_iterators = list(map(iter, self.dataloaders))
+        self.mean_lens = sum(self.lens) // len(self.lens)
+        print('datasets:', conf['data'], 'has mean length:', self.mean_lens)
+        
+    def __getitem__(self, index):
+        ind = random.choices(range(len(self.dataloaders)), weights=self.weights)[0]
+        
+        try:
+            data = next(self.dataloader_iterators[ind])
+        except StopIteration:
+            self.dataloader_iterators[ind] = iter(self.dataloaders[ind])
+            data = next(self.dataloader_iterators[ind])
+        return data
     
+    def __len__(self):
+        return self.mean_lens
+
+    def get_dataloader(self):
+        return DataLoader(self, batch_size=1, collate_fn=lambda x: x[0])
+    
+def get_collate_fn(conf, device, features, label_list, stage):
+    # if choose same:id, additional_data: 1, batch_size = 3
+    # then id will be  torch.tensor([id1, id2, id3, id1, id2, id3])
+    # you can use torch.split for further process
     def aggregate_pad_to_max(batch, i, xyind):
         x, lenx = [], []
-        for data in itertools.chain.from_iterable(batch):
+        for data in itertools.chain.from_iterable(zip(*batch)):
             x.append(data[xyind][i].to(device))
             lenx.append(data[xyind][i].shape[0])
         x = pad_sequence(x, batch_first=True)
@@ -328,8 +406,8 @@ def get_collate_fn(conf, device, features, label_list, stage):
     
     def aggregate_repetitive_to_max(batch, i, xyind):
         x, lenx = [], []
-        maxlen = max(data[xyind][i].shape[0] for data in itertools.chain.from_iterable(batch))
-        for data in itertools.chain.from_iterable(batch):
+        maxlen = max(data[xyind][i].shape[0] for data in itertools.chain.from_iterable(zip(*batch)))
+        for data in itertools.chain.from_iterable(zip(*batch)):
             span = [math.ceil(maxlen/data[xyind][i].shape[0])] + [1] * (data[xyind][i].dim()-1)
             padding_tensor = data[xyind][i].repeat(*span)[:maxlen]
             x.append(padding_tensor.to(device).unsqueeze(0))
@@ -340,8 +418,8 @@ def get_collate_fn(conf, device, features, label_list, stage):
         
     def aggregate_crop_to_min_rand(batch, i, xyind):
         x, lenx = [], []
-        minlen = min(data[xyind][i].shape[0] for data in itertools.chain.from_iterable(batch))
-        for data in itertools.chain.from_iterable(batch):
+        minlen = min(data[xyind][i].shape[0] for data in itertools.chain.from_iterable(zip(*batch)))
+        for data in itertools.chain.from_iterable(zip(*batch)):
             start_index = (torch.rand(1) * (data[xyind][i].shape[0] - minlen + 1)).long()
             x.append(data[xyind][i][start_index:start_index+minlen].to(device).unsqueeze(0))
             lenx.append(minlen)
@@ -351,15 +429,24 @@ def get_collate_fn(conf, device, features, label_list, stage):
     
     def aggregate_crop_to_min(batch, i, xyind):
         x, lenx = [], []
-        minlen = min(data[xyind][i].shape[0] for data in itertools.chain.from_iterable(batch))
-        for data in itertools.chain.from_iterable(batch):
+        minlen = min(data[xyind][i].shape[0] for data in itertools.chain.from_iterable(zip(*batch)))
+        for data in itertools.chain.from_iterable(zip(*batch)):
             start_index = 0
             x.append(data[xyind][i][start_index:start_index+minlen].to(device).unsqueeze(0))
             lenx.append(minlen)
         x = torch.cat(x, dim=0)
         lenx = torch.tensor(lenx)
         return packed_batch(x, lenx)
-    
+
+    def aggregate_pass_unique(batch, i, xyind):
+        temp = ''
+        for data in itertools.chain.from_iterable(zip(*batch)):
+            if temp:
+                assert temp == data[xyind][i]
+            else:
+                temp = data[xyind][i]
+        return packed_batch(temp)
+
     xi, yi = 0, 0
     fns = []
     keys = []
@@ -373,6 +460,8 @@ def get_collate_fn(conf, device, features, label_list, stage):
             fn = aggregate_crop_to_min
         elif aggregate_method == 'crop_to_min_rand':
             fn = aggregate_crop_to_min_rand
+        elif aggregate_method == 'pass_unique':
+            fn = aggregate_pass_unique
         else:
             raise Exception(f'not supported aggregate_method: {aggregate_method}')
         if feature in label_list:
@@ -391,13 +480,15 @@ def get_collate_fn(conf, device, features, label_list, stage):
         ids = []
         for key, fn in zip(keys, fns):
             data[key] = fn(batch)
-        for _x, _y, _id in itertools.chain.from_iterable(batch):
+        for _x, _y, _id in itertools.chain.from_iterable(zip(*batch)):
             ids.append(_id)
-        data['_ids'] = ids
+        data['_ids'] = packed_batch(ids)
+        data['_void'] = None
         return data
     
     return collate_fn
 
+    
 if __name__ == '__main__':
     #from utils.parse_config import get_train_config
     #args, conf = get_train_config()
@@ -412,4 +503,3 @@ if __name__ == '__main__':
                 [ [ torch.arange(16000).reshape(80, 200), torch.randn(1)], [torch.arange(17)], 'temp3' ] ]
         print(collate_fn(batch))
     
-

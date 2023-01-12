@@ -15,7 +15,7 @@ model:
             model_class: model.UTMOS.model:Model
             save: True
             freeze: False
-            inputs: ['wav2vec', '_dataset_feat_x1', '_dataset_feat_x2', '_dataset_feat_x3', '_dataset_feat_x4', '_ids', '_dataset_feat_x5']
+            inputs: ['wav2vec', '_dataset_feat_x1', '_dataset_feat_x2', '_dataset_feat_x3', '_dataset_feat_x4', '_ids', '_dataset_feat_x5', '_dataset_feat_x6']
             arch: 
                 conf: 
                     hidden_dim: 256
@@ -23,22 +23,19 @@ model:
                     out_dim: 256
                     n_lstm_layers: 3
                     vocab_size: 2048
-                    n_domains: 5
+                    n_domains: 20
                     domain_dim: 128
 
                     judge_dim: 128
                     num_judges: 3500
                     projection_hidden_dim: 2048
                     range_clipping: False
-                    pref_mode: pref
+                    pref_mode: pref4_mushra
 
-            output: ['frame_class_score', 'gt_pref_score', 'utt_pref_score', 'utt_class_score', '_ids']
+            output: ['gt_pref_score', 'utt_pref_score', '_ids']
 
 dataset:
-    features: ['wav#wav.scp', 'text.listchar', 'ref.listchar', 'domain.emb', 'judge_id.emb', 'score_norm.txt']
-    pairing:
-        additional_data: 1
-        limits: 'same:judge_id.emb'
+    features: ['wav#wav.scp', 'text.listchar', 'ref.listchar', 'domain.emb', 'judge_id.emb', 'score_norm.txt', 'score_type.str']
     label: []
     fs: 16000
     
@@ -55,18 +52,11 @@ dataset:
     data_augmentation:
         wav#wav.scp:
             -
-                augment: model.augment.AugmentWav:AugmentWav
-                conf:
-                    pitch_shift_minmax:
-                        min: -300
-                        max: 300
-                    random_time_warp_f: 1.0
-                aug_when_inferring: False
-            -
                 augment: model.augment.SliceWav:SliceWav
                 conf:
                     max_wav_seconds: 10
                 aug_when_inferring: False
+
 
 
 # multiple_optimizer
@@ -89,8 +79,8 @@ trainer:
     accum_grad: 4
     loss:
         ClippedMSELoss:
-            criterion_class: model.nn.losses:batchedCELoss
-            inputs: ['utt_class_score', 'gt_pref_score']
+            criterion_class: model.nn.losses:batchedMSELoss
+            inputs: ['utt_pref_score', 'gt_pref_score']
             weight: 1
 
 logger:

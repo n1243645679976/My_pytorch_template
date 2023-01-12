@@ -9,6 +9,7 @@ test=main_test
 features=features
 feat_conf=conf/feat_extract_wav2vec.yaml
 train_conf=conf/UTMOS/utmos_v1_score.yaml
+test_conf=conf/UTMOS/utmos_v1_score_test.yaml
 extract_feature_online="False"
 resume=""
 debug=""
@@ -17,10 +18,11 @@ test_iter=
 start_testing=
 end_testing=
 device="cuda"
+id_dir=""
+outdir=""
 . ./utils/parse_options.sh
 
 set -u
-set -x
 if [ "$debug" == "True" ]; then
     echo "Use debug mode"
     train=sub_train
@@ -54,11 +56,23 @@ if [ ${stage} -eq 0 ]; then
     fi
 fi
 
-if [ -z $tag ]; then
-    expdir=exp/${train}_`basename ${train_conf%%.*}`
+if [ -z "$outdir" ]; then
+    if [ -z "$tag" ]; then
+        expdir=exp/${train}_`basename ${train_conf%%.*}`
+    else
+        expdir=exp/${train}_$tag
+    fi
 else
-    expdir=exp/${train}_$tag
+    expdir=$outdir
+    if [ -d "$outdir" ]; then
+        echo "WARNING: $outdir exists, things will be overwriten";
+    fi
+    if [ ! -d "$outdir/data_ids" ]; then
+        mkdir -p $outdir/data_ids;
+    fi
 fi
+
+
 if [ $stage -eq 1 ]; then
     echo "stage 1: training mosnet"
     python -u main.py --train $train --dev $dev  --conf $train_conf --features $features --exp $expdir --device $device --resume "$resume" --extract_feature_online $extract_feature_online
@@ -77,8 +91,12 @@ if [ ${stage} -eq 2 ]; then
     fi
 fi
 
+if [ -z $id_dir ]; then
+    id_dir=$expdir
+fi
+
 if [ $stage -eq 3 ]; then
     echo "stage 3: testing mosnet"
-    python -u test.py --train $train --test $test --conf $train_conf --exp $expdir --start $start_testing --end $end_testing --features $features --device $device --extract_feature_online $extract_feature_online
+    python -u test.py --id_dir $id_dir --test $test --conf $test_conf --exp $expdir --start $start_testing --end $end_testing --features $features --device $device --extract_feature_online $extract_feature_online
 fi
 done

@@ -1,6 +1,14 @@
 /features/
+/features
 exp/
+data
 data/
 __pycache__/
 *py[cod]
+pretrained_models
 pretrained_models/
+*exp[0-9].sh
+*exp[0-9][0-9].sh
+*.out
+output/
+outputs/
