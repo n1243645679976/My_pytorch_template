@@ -23,16 +23,16 @@ model:
                     out_dim: 256
                     n_lstm_layers: 3
                     vocab_size: 2048
-                    n_domains: 5
+                    n_domains: 20
                     domain_dim: 128
 
                     judge_dim: 128
                     num_judges: 3500
                     projection_hidden_dim: 2048
                     range_clipping: False
-                    pref_mode: pref
+                    pref_mode: pref4
 
-            output: ['frame_class_score', 'gt_pref_score', 'utt_pref_score', 'utt_class_score', '_ids']
+            output: ['gt_pref_score', 'utt_pref_score', '_ids']
 
 dataset:
     features: ['wav#wav.scp', 'text.listchar', 'ref.listchar', 'domain.emb', 'judge_id.emb', 'score_norm.txt']
@@ -41,6 +41,7 @@ dataset:
         limits: 'same:judge_id.emb'
     label: []
     fs: 16000
+    data_cache: false
     
     collate_fns: 
         _default: 'repetitive_to_max'
@@ -55,18 +56,11 @@ dataset:
     data_augmentation:
         wav#wav.scp:
             -
-                augment: model.augment.AugmentWav:AugmentWav
-                conf:
-                    pitch_shift_minmax:
-                        min: -300
-                        max: 300
-                    random_time_warp_f: 1.0
-                aug_when_inferring: False
-            -
                 augment: model.augment.SliceWav:SliceWav
                 conf:
                     max_wav_seconds: 10
                 aug_when_inferring: False
+
 
 
 # multiple_optimizer
@@ -79,18 +73,18 @@ scheduler:
     type: transformers:get_linear_schedule_with_warmup
     conf: 
         num_warmup_steps: 4000
-        num_training_steps: 15000
+        num_training_steps: 30000
 
 trainer:
     iteration_type: 'iteration'
-    iterations: 60000
+    iterations: 120000
     save_per_iterations: 20000
     eval_per_iterations: 20000
     accum_grad: 4
     loss:
         ClippedMSELoss:
-            criterion_class: model.nn.losses:batchedCELoss
-            inputs: ['utt_class_score', 'gt_pref_score']
+            criterion_class: model.nn.losses:batchedMSELoss
+            inputs: ['utt_pref_score', 'gt_pref_score']
             weight: 1
 
 logger:

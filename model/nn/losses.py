@@ -99,7 +99,17 @@ class ClippedMSELoss(nn.Module):
         main_loss = self.forward_criterion(pred_score, gt_score)
         return main_loss # lamb 1.0  
 
+class Focal_MultiLabel_Loss(nn.Module):
+    def __init__(self, gamma):
+      super(Focal_MultiLabel_Loss, self).__init__()
+      self.gamma = gamma
+      self.bceloss = batchedCELoss(reduction='none')
 
+    def forward(self, outputs, targets): 
+      bce = self.bceloss(outputs, targets)
+      bce_exp = torch.exp(-bce)
+      focal_loss = (1-bce_exp)**self.gamma * bce
+      return focal_loss.mean()
 
 if __name__ == '__main__':
     cme = ClippedMSELoss(tau= 0.25,mode='frame')

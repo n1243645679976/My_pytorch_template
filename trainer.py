@@ -65,7 +65,7 @@ class Trainer():
                 (packed_data['_loss'].data['overall_loss'] / self.accum_grad).backward()
 
                 self.handle_accumulate_grad()
-                self.iter_logger.register_one_record(packed_data, len(packed_data['_ids']))
+                self.iter_logger.register_one_record(packed_data, len(packed_data['_ids'].data))
                 if iter_type_iterations:
                     if self.iteration_increase_and_check_break():
                         break
@@ -78,7 +78,7 @@ class Trainer():
             packed_data = self.dev_forward(packed_data)
             packed_data = self.get_loss(packed_data)
 
-            self.dev_logger.register_one_record(packed_data, len(packed_data['_ids']))
+            self.dev_logger.register_one_record(packed_data, len(packed_data['_ids'].data))
         self.dev_logger.log_and_clear_record(self.iters)
         print(f'change learning rate to {self.scheduler.optimizer.param_groups[0]["lr"]}')
 
@@ -87,7 +87,7 @@ class Trainer():
             for packed_data in self.iter_dataloader:
                 packed_data = self.infer_forward(packed_data)
 
-                self.iter_logger.register_one_record(packed_data, len(packed_data['_ids']))
+                self.iter_logger.register_one_record(packed_data, len(packed_data['_ids'].data))
         self.iter_logger.log_and_clear_record(iter)
 
     def handle_accumulate_grad(self):

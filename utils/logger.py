@@ -36,7 +36,7 @@ class Logger():
         self._accum_loss = 0
         self.exp = exp
         self.log_name = log_name
-        os.makedirs(self.exp, exist_ok=True)
+        os.makedirs(os.path.join(self.exp, 'data_ids'), exist_ok=True)
         with open(os.path.join(self.exp, 'config.yaml'), 'w+') as outfile:
             yaml.dump(conf, outfile, default_flow_style=False)
         with open(os.path.join(self.exp, 'args'), 'w+') as outfile:
@@ -198,18 +198,18 @@ class Logger():
         if self.log_metrics:
             for key in self.needed_inputs:
                 if packed_data[key].len != None:
-                    self.metric_record[key].extend([(id, each_batch[:_len].detach().cpu()) for id, each_batch, _len in zip(packed_data['_ids'], packed_data[key].data, packed_data[key].len)])
+                    self.metric_record[key].extend([(id, each_batch[:_len].detach().cpu()) for id, each_batch, _len in zip(packed_data['_ids'].data, packed_data[key].data, packed_data[key].len)])
                 else:
-                    self.metric_record[key].extend([(id, each_batch.detach().cpu()) for id, each_batch in zip(packed_data['_ids'], packed_data[key].data)])
+                    self.metric_record[key].extend([(id, each_batch.detach().cpu()) for id, each_batch in zip(packed_data['_ids'].data, packed_data[key].data)])
         if self.save:
             for save_command in self.save:
                 file_name, key = save_command.split('#')
                 if packed_data[key].len != None:
-                    self.save_record[key].extend([(id, each_batch[:_len].detach().cpu().numpy()) for id, each_batch, _len in zip(packed_data['_ids'], packed_data[key].data, packed_data[key].len)])
+                    self.save_record[key].extend([(id, each_batch[:_len].detach().cpu().numpy()) for id, each_batch, _len in zip(packed_data['_ids'].data, packed_data[key].data, packed_data[key].len)])
                 if isinstance(packed_data[key].data, list):
-                    self.save_record[key].extend([(id, each_batch) for id, each_batch in zip(packed_data['_ids'], packed_data[key].data)])
+                    self.save_record[key].extend([(id, each_batch) for id, each_batch in zip(packed_data['_ids'].data, packed_data[key].data)])
                 else:
-                    self.save_record[key].extend([(id, each_batch.detach().cpu().numpy()) for id, each_batch in zip(packed_data['_ids'], packed_data[key].data)])
+                    self.save_record[key].extend([(id, each_batch.detach().cpu().numpy()) for id, each_batch in zip(packed_data['_ids'].data, packed_data[key].data)])
                     
         loss = packed_data.get('_loss', None)
         if loss != None:

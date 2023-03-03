@@ -73,7 +73,6 @@ class PhonemeEncoder(nn.Module):
     '''
     def __init__(self, vocab_size, hidden_dim, emb_dim, out_dim,n_lstm_layers,with_reference=True) -> None:
         super(PhonemeEncoder, self).__init__()
-        print(vocab_size, hidden_dim, emb_dim, out_dim,n_lstm_layers)
         self.with_reference = with_reference
         self.embedding = nn.Embedding(vocab_size, emb_dim)
         self.encoder = nn.LSTM(emb_dim, hidden_dim,
@@ -178,13 +177,44 @@ class Projection(nn.Module):
             nn.Dropout(0.3),
             nn.Linear(self.hidden_dim, 1),
         )
-        self.perf_net = nn.Sequential(
-            nn.Linear(input_dim * 2, self.hidden_dim),
-            self.activation,
-            nn.Dropout(0.3),
-            nn.Linear(self.hidden_dim, 2),
-            nn.Softmax(dim=2)
-        )
+        if self.conf['pref_mode'] == 'pref':
+            self.perf_net = nn.Sequential(
+                nn.Linear(input_dim * 2, self.hidden_dim),
+                self.activation,
+                nn.Dropout(0.3),
+                nn.Linear(self.hidden_dim, 2),
+            )
+        if self.conf['pref_mode'] == 'pref1':
+            self.perf_net = nn.Sequential(
+                nn.Linear(input_dim * 2, self.hidden_dim),
+                self.activation,
+                nn.Dropout(0.3),
+                nn.Linear(self.hidden_dim, 3),
+            )
+        if self.conf['pref_mode'] == 'pref2':
+            self.perf_net = nn.Sequential(
+                nn.Linear(input_dim * 2, self.hidden_dim),
+                self.activation,
+                nn.Dropout(0.3),
+                nn.Linear(self.hidden_dim, self.hidden_dim),
+                self.activation,
+                nn.Dropout(0.3),
+                nn.Linear(self.hidden_dim, self.hidden_dim),
+                self.activation,
+                nn.Dropout(0.3),
+                nn.Linear(self.hidden_dim, self.hidden_dim),
+                self.activation,
+                nn.Dropout(0.3),
+                nn.Linear(self.hidden_dim, 3),
+            )
+#        if self.conf['pref_mode'] == 'pref5' or self.conf['pref_mode'] == 'pref4' \
+#            or self.conf['pref_mode'] == 'pref5_score' or self.conf['pref_mode'] == 'pref4_score':
+#            self.perf_net = nn.Sequential(
+#                nn.Linear(input_dim, self.hidden_dim),
+#                self.activation,
+#                nn.Dropout(0.3),
+#                nn.Linear(self.hidden_dim, 3),
+#            )
     
     def forward(self, x):
         if self.conf['pref_mode'] == 'pref':
@@ -195,16 +225,48 @@ class Projection(nn.Module):
             output = output.transpose(1, 2)
             # B * 2 * T
             return output
-
-        elif self.conf['pref_mode'] == 'both':
+        elif self.conf['pref_mode'] == 'pref1':
+            pairs = torch.split(x, x.shape[0] // 2, dim=0)
+            x = torch.cat([pairs[0], pairs[1]], dim=2)
             output = self.perf_net(x)
             output = F.softmax(output, dim=2)
             output = output.transpose(1, 2)
-
-            output1 = self.net(x)
-            if self.range_clipping:
-                output1 = self.proj(output1) * 2.0 + 3
-            return torch.cat([output, output1], dim=2)
+            # B * 3 * T
+            return output
+        elif self.conf['pref_mode'] == 'pref2':
+            pairs = torch.split(x, x.shape[0] // 2, dim=0)
+            x = torch.cat([pairs[0], pairs[1]], dim=2)
+            output = self.perf_net(x)
+            output = F.softmax(output, dim=2)
+            output = output.transpose(1, 2)
+            # B * 3 * T
+            return output
+        elif self.conf['pref_mode'] == 'pref4':
+            output = self.net(x)
+            output = output.mean(dim=1)
+            pairs = torch.split(output, output.shape[0] // 2, dim=0)
+            output = torch.sigmoid(pairs[0] - pairs[1]) * 2 - 1
+            return output
+        elif self.conf['pref_mode'] == 'pref4_mushra':
+            output = self.net(x)
+            output = output.mean(dim=1)
+            pairs = torch.split(output, output.shape[0] // 2, dim=0)
+            output = torch.sigmoid(pairs[0] - pairs[1]) * 2 - 1
+            return output
+        elif self.conf['pref_mode'] == 'pref5':
+            output = self.net(x)
+            output = output.mean(dim=1)
+            pairs = torch.split(output, output.shape[0] // 2, dim=0)
+            output = torch.tanh(pairs[0] - pairs[1])
+            return output
+        elif self.conf['pref_mode'] == 'pref4_score':
+            output = self.net(x)
+            output = output.mean(dim=1)
+            return output
+        elif self.conf['pref_mode'] == 'pref5_score':
+            output = self.net(x)
+            output = output.mean(dim=1)
+            return output
 
         else:
             output = self.net(x)
@@ -217,7 +279,6 @@ class Projection(nn.Module):
                 return output
     def get_output_dim(self):
         return self.output_dim
-
 
 class Model(torch.nn.Module):
     def __init__(self, conf):
@@ -245,6 +306,10 @@ class Model(torch.nn.Module):
             scores = x[6].data
         except IndexError as e:
             pass
+        if len(x) > 7:
+            mushra = x[7].data
+        else:
+            mushra = 'MOS'
         phoneme_feature = self.phoneme_model(seq, lens, reference_seq, reference_len)
         domain_feature = self.domain_model(domain)
         ld_feature = self.ldconditioner(ssl_feature, domain_feature, phoneme_feature, judge_id)
@@ -254,8 +319,44 @@ class Model(torch.nn.Module):
             gt_scores = (split_scores[0] > split_scores[1]).long()
             utt_class_scores = output.mean(dim=2)
             utt_scores = torch.argmax(utt_class_scores, dim=1, keepdim=True)
-            ids = [ids[i] + '__&__' + ids[i+len(ids) // 2] for i in range(len(ids) // 2)]
+            ids = [ids.data[i] + '__&__' + ids.data[i+len(ids.data) // 2] for i in range(len(ids.data) // 2)]
             return output, gt_scores, utt_scores, utt_class_scores, ids
+        elif self.conf['pref_mode'] == 'pref1':
+            split_scores = torch.split(scores, scores.shape[0] // 2, dim=0)
+            gt_scores = 1 + (split_scores[0] > split_scores[1]).long() - (split_scores[0] < split_scores[1]).long() # 2, 1, 0 for win, draw, lose
+            utt_class_scores = output.mean(dim=2)
+            utt_scores = torch.argmax(utt_class_scores, dim=1, keepdim=True)
+            ids = [ids.data[i] + '__&__' + ids.data[i+len(ids.data) // 2] for i in range(len(ids.data) // 2)]
+            return output, gt_scores, utt_scores, utt_class_scores, ids
+        elif self.conf['pref_mode'] == 'pref2':
+            split_scores = torch.split(scores, scores.shape[0] // 2, dim=0)
+            gt_scores = 1 + (split_scores[0] > split_scores[1]).long() - (split_scores[0] < split_scores[1]).long() # 2, 1, 0 for win, draw, lose
+            utt_class_scores = output.mean(dim=2)
+            utt_scores = torch.argmax(utt_class_scores, dim=1, keepdim=True)
+            ids = [ids.data[i] + '__&__' + ids.data[i+len(ids.data) // 2] for i in range(len(ids.data) // 2)]
+            return output, gt_scores, utt_scores, utt_class_scores, ids
+        elif self.conf['pref_mode'] == 'pref4' or self.conf['pref_mode'] == 'pref4_mushra':
+            split_scores = torch.split(scores, scores.shape[0] // 2, dim=0)
+            gt_scores = (split_scores[0] > split_scores[1]).float() - (split_scores[0] < split_scores[1]).float() # 2, 1, 0 for win, draw, lose
+            ids = [ids.data[i] + '__&__' + ids.data[i+len(ids.data) // 2] for i in range(len(ids.data) // 2)]
+            return gt_scores, output, ids
+        elif self.conf['pref_mode'] == 'pref4_mushra':
+            split_scores = torch.split(scores, scores.shape[0] // 2, dim=0)
+            if mushra == 'MOS':
+                gt_scores = (split_scores[0] > split_scores[1]).float() - (split_scores[0] < split_scores[1]).float() # 2, 1, 0 for win, draw, lose
+            else:
+                gt_scores = (split_scores[0] - split_scores[1] >= 0.5).float() - (split_scores[0] - split_scores[1] <= 0.5).float()
+            ids = [ids.data[i] + '__&__' + ids.data[i+len(ids.data) // 2] for i in range(len(ids.data) // 2)]
+            return gt_scores, output, ids
+        elif self.conf['pref_mode'] == 'pref5':
+            split_scores = torch.split(scores, scores.shape[0] // 2, dim=0)
+            gt_scores = (split_scores[0] > split_scores[1]).float() - (split_scores[0] < split_scores[1]).float() # 2, 1, 0 for win, draw, lose
+            ids = [ids.data[i] + '__&__' + ids.data[i+len(ids.data) // 2] for i in range(len(ids.data) // 2)]
+            return gt_scores, output, ids
+        elif self.conf['pref_mode'] == 'pref4_score':
+            return scores, output
+        elif self.conf['pref_mode'] == 'pref5_score':
+            return scores, output
         else:
             utt_scores = output.mean(dim=1)
             return output, utt_scores

@@ -19,7 +19,7 @@ if __name__ == '__main__':
     model = get_model(conf=conf,
                       resume=load_model['model'],
                       device=args.device)
-    test_dataloader = Dataset(feature_dir=args.features, data=args.test, train_data=args.train, stage='test', conf=conf['dataset'], extract_feature_online=args.extract_feature_online, device=args.device).get_dataloader()
+    test_dataloader = Dataset(feature_dir=args.features, exp=args.exp, data=args.test,  id_dir=args.id_dir, stage='test', conf=conf['dataset'], extract_feature_online=args.extract_feature_online, device=args.device).get_dataloader()
     optimizer = get_optimizer(model, conf=conf['optimizer'], load_optimizer=load_model['optimizer'])
     test_logger = Logger(exp=args.exp, args=args, conf=conf, log_name=args.test)
 
