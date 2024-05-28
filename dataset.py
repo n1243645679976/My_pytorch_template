@@ -74,8 +74,7 @@ class singleDataset(torch.utils.data.Dataset):
             files_id_list = os.path.join('data', data, 'datasetids')
             self.id_list_type_is_trials = False
         else:
-            files_id_list = os.path.join('data', data, 'wav.scp')
-            self.id_list_type_is_trials = False
+            raise NotImplementedError("please assign the ids for training/evaluating using file 'datasetids' or 'trials'")
             
         with open(files_id_list) as f:
             for line in f.read().splitlines():
@@ -265,7 +264,7 @@ class singleDataset(torch.utils.data.Dataset):
                     if 'data' not in node:
                         node['data'] = []
                     node['data'].append(i)
-#        assert len(self.key_list) == len(set(self.key_list)) # check unique key
+        assert len(self.key_list) == len(set(self.key_list)) # check unique key
         print(f'{self.stage} {data} dataset size: {len(self.key_list)} ', end='')
         if self.id_list_type_is_trials:
             print('trials')
@@ -438,15 +437,6 @@ def get_collate_fn(conf, device, features, label_list, stage):
         lenx = torch.tensor(lenx)
         return packed_batch(x, lenx)
 
-    def aggregate_pass_unique(batch, i, xyind):
-        temp = ''
-        for data in itertools.chain.from_iterable(zip(*batch)):
-            if temp:
-                assert temp == data[xyind][i]
-            else:
-                temp = data[xyind][i]
-        return packed_batch(temp)
-
     xi, yi = 0, 0
     fns = []
     keys = []
@@ -460,20 +450,17 @@ def get_collate_fn(conf, device, features, label_list, stage):
             fn = aggregate_crop_to_min
         elif aggregate_method == 'crop_to_min_rand':
             fn = aggregate_crop_to_min_rand
-        elif aggregate_method == 'pass_unique':
-            fn = aggregate_pass_unique
         else:
             raise Exception(f'not supported aggregate_method: {aggregate_method}')
         if feature in label_list:
             if stage == 'test':
                 continue
             fns.append(functools.partial(fn, i=yi, xyind=1))
-            keys.append(f'_dataset_feat_y{yi}')
             yi += 1
         else:
             fns.append(functools.partial(fn, i=xi, xyind=0))
-            keys.append(f'_dataset_feat_x{xi}')
             xi += 1
+        keys.append(feature)
     
     def collate_fn(batch):
         data = {}
