@@ -4,7 +4,7 @@ model:
             model_class: model.features.wav2vec:featureExtractor
             save: True
             freeze: False
-            inputs: ['_dataset_feat_x0']
+            inputs: ['wav16k#wav.filelist']
             arch:
                 conf:
                     cp_path: pretrained_models/wav2vec_small.pt
@@ -15,7 +15,7 @@ model:
             model_class: model.UTMOS.model:Model
             save: True
             freeze: False
-            inputs: ['wav2vec', '_dataset_feat_x1', '_dataset_feat_x2', '_dataset_feat_x3', '_dataset_feat_x4']
+            inputs: ['wav2vec', 'text.listchar', 'ref.listchar', 'domain.emb', 'judge_id.emb', 'score_norm.txt']
             arch: 
                 conf: 
                     hidden_dim: 256
@@ -35,7 +35,7 @@ model:
             output: ['pred_score', 'pred_utt_score']
 
 dataset:
-    features: ['wav#wav.scp', 'text.listchar', 'ref.listchar', 'domain.emb', 'judge_id.emb', 'score_norm.txt']
+    features: ['wav16k#wav.filelist', 'text.listchar', 'ref.listchar', 'domain.emb', 'judge_id.emb', 'score_norm.txt']
     label: []
     fs: 16000
 
