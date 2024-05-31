@@ -231,9 +231,9 @@ class singleDataset(torch.utils.data.Dataset):
                         if key in key_set:
                             self.feat_key_file_dict[feat][key] = value
                 if feat.endswith('.pt.feat'):
-                    self.file_loader[feat] = importlib.import_module(f'model.file_loading:pt_loader')
+                    self.file_loader[feat] = getattr(importlib.import_module('model.file_loading'), 'pt_loader')()
                 elif feat.endswith('.np.feat'):
-                    self.file_loader[feat] = importlib.import_module(f'model.file_loading:np_loader')
+                    self.file_loader[feat] = getattr(importlib.import_module('model.file_loading'), 'np_loader')()
                 else:
                     raise Exception(f"Unsupported input {feat}, '.feat' only support '.pt.feat' and '.np.feat' now")
                 self.data[feat] = defaultdict(lambda : None)
@@ -247,7 +247,7 @@ class singleDataset(torch.utils.data.Dataset):
                 assert feat.count('#') == 1
                 if self.extract_feature_online:
                     file = feat.split('#')[1]
-                    self.file_loader[feat] = importlib.import_module(f'model.file_loading:{feat.split("#")[0]}')
+                    self.file_loader[feat] = getattr(importlib.import_module('model.file_loading'), f'{feat.split("#")[0]}')()
                     with open(os.path.join('data', data, file)) as f:
                         for line in f.read().splitlines():
                             key, value = line.split()
