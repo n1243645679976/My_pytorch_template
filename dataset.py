@@ -247,7 +247,7 @@ class singleDataset(torch.utils.data.Dataset):
                 assert feat.count('#') == 1
                 if self.extract_feature_online:
                     file = feat.split('#')[1]
-                    self.file_loader[feat] = importlib.import_module(f'model.file_loading:{feat}')
+                    self.file_loader[feat] = importlib.import_module(f'model.file_loading:{feat.split("#")[0]}')
                     with open(os.path.join('data', data, file)) as f:
                         for line in f.read().splitlines():
                             key, value = line.split()
