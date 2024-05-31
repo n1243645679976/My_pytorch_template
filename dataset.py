@@ -1,19 +1,22 @@
 import os
 import yaml
+import math
+import copy
 import torch
-import librosa
-import importlib
 import shutil
 import random
+import librosa
+import importlib
+import functools
+import itertools
+
+import numpy as np
+
 from collections import defaultdict
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from utils.get_rand import get_random
 from utils.dynamic_import import dynamic_import
-import math
-import functools
-import itertools
-import copy
 
 class packed_batch():
     def __init__(self, data, data_len=None):
@@ -46,7 +49,7 @@ class singleDataset(torch.utils.data.Dataset):
         self.data_cache = conf.get('data_cache', True)
         print('data_cache', self.data_cache)
         self.feature_dir = feature_dir
-        self.extractors = {}
+        self.file_loader = {}
 
         self.dir = data
         self.data = {}
@@ -55,9 +58,9 @@ class singleDataset(torch.utils.data.Dataset):
         self.collate_fns = conf['collate_fns'] # for get_dataloader use
         self.batch_size = conf['batch_size'].get(stage, conf['batch_size']['_default']) # for get_dataloader use
         self.augment = defaultdict(list)
-        self.feat_key_wav_dict = defaultdict(lambda : defaultdict(lambda : defaultdict(None)))
+        self.feat_key_file_dict = defaultdict(lambda : defaultdict(lambda : defaultdict(None)))
         self.trial_keys = defaultdict(lambda : defaultdict(None))
-        self.wavdict = {}
+        self.featdict = defaultdict(lambda : defaultdict(None))
         self.device = device
 
         for aug_feature, aug_confs in conf.get('data_augmentation', {}).items():
@@ -75,14 +78,15 @@ class singleDataset(torch.utils.data.Dataset):
             self.id_list_type_is_trials = False
         else:
             raise NotImplementedError("please assign the ids for training/evaluating using file 'datasetids' or 'trials'")
-            
+        
         with open(files_id_list) as f:
             for line in f.read().splitlines():
                 if self.id_list_type_is_trials:
                     self.key_list.append(tuple(line.split()))
                 else:
                     self.key_list.append(tuple(line.split()[:1]))
-                
+            key_set = set(self.key_list)
+
         for feat in conf['features']:
             ## txt: {id} {float}
             if feat.endswith('.txt'):
@@ -90,7 +94,8 @@ class singleDataset(torch.utils.data.Dataset):
                     self.data[feat] = {}
                     for line in f.read().splitlines():
                         key, value = line.split()
-                        self.data[feat][key] = torch.tensor(float(value)).reshape(1)
+                        if key in key_set:
+                            self.data[feat][key] = torch.tensor(float(value)).reshape(1)
 
             ## str: {id} {string}
             elif feat.endswith('.str'):
@@ -98,16 +103,16 @@ class singleDataset(torch.utils.data.Dataset):
                     self.data[feat] = {}
                     for line in f.read().splitlines():
                         key, value = line.split(' ', maxsplit=1)
-                        self.data[feat][key] = value
+                        if key in key_set:
+                            self.data[feat][key] = value
 
             ## emb: {id} {some identifier}
             ##   diction write in to .embid
             elif feat.endswith('.emb'):
                 id = 0
                 key2value = {}
-                if id_dir:
-                    if id_dir != exp:
-                        shutil.copy(os.path.join(id_dir, 'data_ids', feat + 'id'), os.path.join(exp, 'data_ids', feat + 'id'))
+                if id_dir and id_dir != exp:
+                    shutil.copy(os.path.join(id_dir, 'data_ids', feat + 'id'), os.path.join(exp, 'data_ids', feat + 'id'))
 
                 if os.path.isfile(os.path.join(exp, 'data_ids', feat + 'id')):
                     with open(os.path.join(exp, 'data_ids', feat + 'id')) as f:
@@ -121,10 +126,11 @@ class singleDataset(torch.utils.data.Dataset):
                     self.data[feat] = {}
                     for line in sorted(f.read().splitlines()):
                         key, emb = line.split()
-                        if emb not in key2value:
-                            key2value[emb] = id
-                            id += 1
-                        self.data[feat][key] = torch.tensor(key2value[emb]).long().reshape(1)
+                        if key in key_set:
+                            if emb not in key2value:
+                                key2value[emb] = id
+                                id += 1
+                            self.data[feat][key] = torch.tensor(key2value[emb]).long().reshape(1)
 
                 with open(os.path.join(exp, 'data_ids', feat + 'id'), 'w+') as w:
                     for emb, _id in key2value.items():
@@ -138,7 +144,8 @@ class singleDataset(torch.utils.data.Dataset):
                     self.data[feat] = {}
                     for line in f.read().splitlines():
                         key, value = line.split(' ', maxsplit=1)
-                        self.data[feat][key] = torch.tensor(list(map(float, value.split()))).reshape(-1)
+                        if key in key_set:
+                            self.data[feat][key] = torch.tensor(list(map(float, value.split()))).reshape(-1)
 
             ## listemb: {id} {token1} {token2} {token3}
             ## e.g. wav1 aa b c
@@ -148,9 +155,8 @@ class singleDataset(torch.utils.data.Dataset):
             elif feat.endswith('.listemb'):
                 id = 1 # start from 1 to avoid pad by 0
                 key2value = {}
-                if id_dir:
-                    if id_dir != exp:
-                        shutil.copy(os.path.join(id_dir, 'data_ids', feat + 'id'), os.path.join(exp, 'data_ids', feat + 'id'))
+                if id_dir and id_dir != exp:
+                    shutil.copy(os.path.join(id_dir, 'data_ids', feat + 'id'), os.path.join(exp, 'data_ids', feat + 'id'))
 
                 if os.path.isfile(os.path.join(exp, 'data_ids', feat + 'id')):
                     with open(os.path.join(exp, 'data_ids', feat + 'id')) as f:
@@ -164,13 +170,14 @@ class singleDataset(torch.utils.data.Dataset):
                     self.data[feat] = {}
                     for line in sorted(f.read().splitlines()):
                         key, embs = line.split(maxsplit=1)
-                        listemb = []
-                        for emb in embs.split():
-                            if emb not in key2value:
-                                key2value[emb] = id
-                                id += 1
-                            listemb.append(torch.tensor(key2value[emb]).long().reshape(1))
-                        self.data[feat][key] = torch.cat(listemb, dim=0)
+                        if key in key_set:
+                            listemb = []
+                            for emb in embs.split():
+                                if emb not in key2value:
+                                    key2value[emb] = id
+                                    id += 1
+                                listemb.append(torch.tensor(key2value[emb]).long().reshape(1))
+                            self.data[feat][key] = torch.cat(listemb, dim=0)
 
                 with open(os.path.join(exp, 'data_ids', feat + 'id'), 'w+') as w:
                     for emb, _id in key2value.items():
@@ -185,9 +192,8 @@ class singleDataset(torch.utils.data.Dataset):
             elif feat.endswith('.listchar'):
                 id = 1 # start from 1 to avoid pad by 0
                 key2value = {}
-                if id_dir:
-                    if id_dir != exp:
-                        shutil.copy(os.path.join(id_dir, 'data_ids', feat + 'id'), os.path.join(exp, 'data_ids', feat + 'id'))
+                if id_dir and id_dir != exp:
+                    shutil.copy(os.path.join(id_dir, 'data_ids', feat + 'id'), os.path.join(exp, 'data_ids', feat + 'id'))
 
                 if os.path.isfile(os.path.join(exp, 'data_ids', feat + 'id')):
                     with open(os.path.join(exp, 'data_ids', feat + 'id')) as f:
@@ -201,13 +207,14 @@ class singleDataset(torch.utils.data.Dataset):
                     self.data[feat] = {}
                     for line in sorted(f.read().splitlines()):
                         key, embs = line.split(maxsplit=1)
-                        listemb = []
-                        for emb in embs:
-                            if emb not in key2value:
-                                key2value[emb] = id
-                                id += 1
-                            listemb.append(torch.tensor(key2value[emb]).long().reshape(1))
-                        self.data[feat][key] = torch.cat(listemb, dim=0)
+                        if key in key_set:
+                            listemb = []  
+                            for emb in embs:
+                                if emb not in key2value:
+                                    key2value[emb] = id
+                                    id += 1
+                                listemb.append(torch.tensor(key2value[emb]).long().reshape(1))
+                            self.data[feat][key] = torch.cat(listemb, dim=0)
 
                 with open(os.path.join(exp, 'data_ids', feat + 'id'), 'w+') as w:
                     for emb, _id in key2value.items():
@@ -216,44 +223,40 @@ class singleDataset(torch.utils.data.Dataset):
 
             elif feat.split('#')[0].endswith('random'):
                 self.data[feat][key] = get_random(feat)
+
+            elif feat.endswith('.feat'):
+                with open(os.path.join('data', data, feat)) as f:
+                    for line in sorted(f.read().splitlines()):
+                        key, value = line.split()
+                        if key in key_set:
+                            self.feat_key_file_dict[feat][key] = value
+                if feat.endswith('.pt.feat'):
+                    self.file_loader[feat] = importlib.import_module(f'model.file_loading:pt_loader')
+                elif feat.endswith('.np.feat'):
+                    self.file_loader[feat] = importlib.import_module(f'model.file_loading:np_loader')
+                else:
+                    raise Exception(f"Unsupported input {feat}, '.feat' only support '.pt.feat' and '.np.feat' now")
+                self.data[feat] = defaultdict(lambda : None)
+                
+            
             ## others:
-            ##   e.g.  spectrogram#wav.scp, spectrogram#clean_wav.scp -> use conf/spectrogram.yaml to extract data/{data}/wav.scp or data/{data}/clean_wav.scp
-            ##         stoi#trial#wav.scp#wav1.scp, pesq#trial#wav.scp#wav1.scp
+            ##   e.g.  wav16k#wav.filelist -> use model.file_loading.load_wav_16k to extract data/{data}/wav.scp
+            ##  
             ##   only the shape of dimension 0 can be variable
-            elif feat.endswith('wav.scp'):
+            elif feat.endswith('.filelist'):
+                assert feat.count('#') == 1
                 if self.extract_feature_online:
-                    feat_conf_file = feat.split('#')[0]
-                    with open(f'conf/features/{feat_conf_file}.yaml') as f:
-                        feat_conf = yaml.safe_load(f)
-                        feat_conf['fs'] = conf['fs']
-                    self.extractors[feat] = importlib.import_module(f'model.features.{feat_conf["feature"]}').extractor(feat_conf)
-
-                    # Not given file to extract, then use default: 'wav.scp' or 'trial', 'wav.scp', 'wav1.scp', 'wav2.scp', ...
-                    self.filelist = feat.split('#')[1:]
-                    if self.filelist == []:
-                        self.filelist = self.extractors[feat].get_default_input_filenames()
-
-                    if len(self.filelist) == 1:
-                        with open(os.path.join('data', data, self.filelist[0])) as f:
-                            for line in f.read().splitlines():
-                                key, value = line.split()
-                                self.feat_key_wav_dict[feat][key][0] = value
-                                self.trial_keys[feat][key] = [key]
-                    else:
-                        for i, file in enumerate(self.filelist[1:]):
-                            with open(os.path.join('data', data, file)) as f:
-                                for line in f.read().splitlines():
-                                    key, value = line.split()
-                                    self.feat_key_wav_dict[feat][key][i] = value
-
-                        with open(os.path.join('data', data, self.filelist[0])) as f:
-                            for line in f.read().splitlines():
-                                key, value = line.split(' ', maxsplit=1)
-                                self.trial_keys[feat][key] = value.split()
+                    file = feat.split('#')[1]
+                    self.file_loader[feat] = importlib.import_module(f'model.file_loading:{feat}')
+                    with open(os.path.join('data', data, file)) as f:
+                        for line in f.read().splitlines():
+                            key, value = line.split()
+                            if key in key_set:
+                                self.feat_key_file_dict[feat][key] = value
                 self.data[feat] = defaultdict(lambda : None)
             else:
                 raise Exception(f"Unsupported input {feat}")
-                
+                 
         if self.taken_item > 1:
             assert not self.id_list_type_is_trials
             self.limits = conf['pairing']['limits'].split(',')
@@ -312,23 +315,8 @@ class singleDataset(torch.utils.data.Dataset):
                 data = self.data[feat][key]
                 if data == None:
                     if self.extract_feature_online:
-                        keys = self.trial_keys[feat][key]
-                        wavs = []
-                        for i, _key in enumerate(keys):
-                            wavfile = self.feat_key_wav_dict[feat][_key][i]
-                            if wavfile not in self.wavdict:
-                                # we load wavfile with librosa.load, which can resmaple the wavform in the same time.
-                                if wavfile.endswith('.wav') or wavfile.endswith('.flac'):
-                                    wav, sr = librosa.load(wavfile, sr=self.conf['fs'])
-                                    if self.data_cache:
-                                        self.wavdict[wavfile] = wav
-                                elif wavfile.endswith('.pt'):
-                                    wav = torch.load(wavfile)
-                                # you can add some condition like ".endswtih('.png')" or other extensions here to read it by some file reading method
-                            else:
-                                wav = self.wavdict[wavfile]
-                            wavs.append(wav)
-                        data = self.extractors[feat](*wavs)
+                        featfile = self.feat_key_file_dict[feat][key]
+                        data = self.file_loader[feat](featfile)
                         if self.data_cache:
                             self.data[feat][key] = data
                     else:
@@ -337,7 +325,7 @@ class singleDataset(torch.utils.data.Dataset):
                         if self.data_cache:
                             self.data[feat][key] = data
              
-            if self.stage == 'train':      
+            if self.stage == 'train':
                 for aug_method in self.augment[feat]:
                     data = aug_method(data)
                     

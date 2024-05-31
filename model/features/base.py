@@ -17,6 +17,7 @@ class baseExtractor(torch.nn.Module, abc.ABC):
     @abc.abstractmethod
     def get_output_dim(self):
         raise NotImplemented
+    
     def get_default_input_filenames(self):
         """
         if wavscp_nums == 1: ['wav.scp']
